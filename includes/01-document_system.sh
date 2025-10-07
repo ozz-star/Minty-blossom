@@ -1,3 +1,4 @@
+
 # includes/01-document_system.sh (top of file)
 #!/usr/bin/env bash
 # Enable strict mode only when run directly, not when sourced

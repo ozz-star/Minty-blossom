@@ -16,30 +16,78 @@ invoke_os_updates () {
 # Update APT sources based on distro/codename (Debian family)
 # ------------------------------------------------------------
 osu_update_sources_for_distro () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Refresh APT sources based on distro:
-- Ubuntu: overwrite /etc/apt/sources.list using $CODENAME (from config.sh) with main, universe, multiverse, -updates, -security, -backports.
-- Linux Mint: write the official list to /etc/apt/sources.list.d/official-package-repositories.list using Mint codename and the underlying Ubuntu codename (read UBUNTU_CODENAME from /etc/os-release).
-- Debian: skip with a friendly message (do not change sources).
-Back up any file you overwrite (e.g., .bak). Use sudo where needed.
+  # Ensure DISTRO and CODENAME are set in the environment
+  if [ -z "${DISTRO:-}" ] || [ -z "${CODENAME:-}" ]; then
+    echo "osu_update_sources_for_distro: DISTRO and CODENAME must be set in the environment." >&2
+    return 1
+  fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Read $DISTRO and $CODENAME from the environment (already exported by config.sh).
-- For Ubuntu:
-  - Create a backup of /etc/apt/sources.list if it exists.
-  - Overwrite /etc/apt/sources.list with four lines that use $CODENAME and include main, universe, multiverse for base, -updates, -security, -backports.
-  - Use a safe method for writing with sudo (e.g., tee).
-- For Linux Mint:
-  - Source /etc/os-release and read UBUNTU_CODENAME.
-  - Create a backup of /etc/apt/sources.list.d/official-package-repositories.list if it exists.
-  - Overwrite that file with the standard Mint line using the Mint codename, plus the five Ubuntu lines using $UBUNTU_CODENAME (base, -updates, -backports, -security) similar to Ubuntu above.
-- For Debian:
-  - Print a message like "Debian detected; leaving sources as-is." and do nothing.
-- Print a brief confirmation of what was changed or skipped.
-AI_BLOCK
+  case "${DISTRO,,}" in
+    ubuntu)
+      SRC_FILE="/etc/apt/sources.list"
+      BACKUP_FILE="${SRC_FILE}.bak"
+      if [ -f "$SRC_FILE" ]; then
+        sudo cp -a "$SRC_FILE" "$BACKUP_FILE"
+        echo "Backed up $SRC_FILE to $BACKUP_FILE"
+      fi
+
+      # Prepare the new sources content
+      NEW_SOURCES="deb http://archive.ubuntu.com/ubuntu/ ${CODENAME} main universe multiverse\n"
+      NEW_SOURCES+="deb http://archive.ubuntu.com/ubuntu/ ${CODENAME}-updates main universe multiverse\n"
+      NEW_SOURCES+="deb http://security.ubuntu.com/ubuntu/ ${CODENAME}-security main universe multiverse\n"
+      NEW_SOURCES+="deb http://archive.ubuntu.com/ubuntu/ ${CODENAME}-backports main universe multiverse\n"
+
+      # Write using sudo tee to ensure safe write
+      printf "%b" "$NEW_SOURCES" | sudo tee "$SRC_FILE" > /dev/null
+      sudo chmod 644 "$SRC_FILE" || true
+      echo "Ubuntu detected; /etc/apt/sources.list overwritten for codename '${CODENAME}'."
+      ;;
+
+    "linuxmint"|mint)
+      # Source os-release to get UBUNTU_CODENAME
+      if [ -r /etc/os-release ]; then
+        # shellcheck disable=SC1091
+        . /etc/os-release
+      fi
+
+      UB_CODENAME="${UBUNTU_CODENAME:-}"
+      if [ -z "$UB_CODENAME" ]; then
+        echo "Linux Mint detected but UBUNTU_CODENAME not found in /etc/os-release; aborting." >&2
+        return 1
+      fi
+
+      MINT_SRC_DIR="/etc/apt/sources.list.d"
+      MINT_SRC_FILE="$MINT_SRC_DIR/official-package-repositories.list"
+      MINT_BACKUP="${MINT_SRC_FILE}.bak"
+
+      if [ -f "$MINT_SRC_FILE" ]; then
+        sudo cp -a "$MINT_SRC_FILE" "$MINT_BACKUP"
+        echo "Backed up $MINT_SRC_FILE to $MINT_BACKUP"
+      fi
+
+      # Standard Mint repository line (uses Mint codename in CODENAME)
+      MINT_LINE="deb http://packages.linuxmint.com ${CODENAME} main upstream import backport"
+
+      # Ubuntu lines using UBUNTU_CODENAME
+      UB_LINES="deb http://archive.ubuntu.com/ubuntu/ ${UB_CODENAME} main universe multiverse\n"
+      UB_LINES+="deb http://archive.ubuntu.com/ubuntu/ ${UB_CODENAME}-updates main universe multiverse\n"
+      UB_LINES+="deb http://security.ubuntu.com/ubuntu/ ${UB_CODENAME}-security main universe multiverse\n"
+      UB_LINES+="deb http://archive.ubuntu.com/ubuntu/ ${UB_CODENAME}-backports main universe multiverse\n"
+
+      # Combine and write
+      printf "%s\n%b" "$MINT_LINE" "$UB_LINES" | sudo tee "$MINT_SRC_FILE" > /dev/null
+      sudo chmod 644 "$MINT_SRC_FILE" || true
+      echo "Linux Mint detected; wrote $MINT_SRC_FILE with Mint codename '${CODENAME}' and Ubuntu codename '${UB_CODENAME}'."
+      ;;
+
+    debian)
+      echo "Debian detected; leaving sources as-is."
+      ;;
+
+    *)
+      echo "Unrecognized DISTRO '$DISTRO'; no changes made."
+      ;;
+  esac
 }
 
 # ------------------------------------------------------------
