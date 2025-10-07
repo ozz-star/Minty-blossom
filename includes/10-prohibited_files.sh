@@ -13,19 +13,27 @@ invoke_prohibited_files () {
 # Remove files matching extensions from $FILE_EXTENSIONS
 # -------------------------------------------------------------------
 pf_remove_prohibited_files () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Delete files across the filesystem whose extensions are listed in the Bash array $FILE_EXTENSIONS
-(defined in config.sh). For each extension, print a status line before deleting matching files.
+  # Ensure FILE_EXTENSIONS is set and is an array-like list
+  if [ -z "${FILE_EXTENSIONS:-}" ]; then
+    echo "No file extensions configured."
+    return 0
+  fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Read the Bash array $FILE_EXTENSIONS. If unset or empty, print "No file extensions configured." and return.
-- For each extension value (e.g., mp3), print: "Searching and removing files with .<ext> extension..."
-- Recursively search from / for regular files matching "*.<ext>" and delete them.
-- Suppress noisy errors (e.g., permission denied) so the loop continues.
-- Continue on errors for individual deletions; do not abort the script.
-- Print minimal confirmations or a final summary when done.
-AI_BLOCK
+  total=0
+  # Iterate over extensions (whitespace-separated)
+  for ext in $FILE_EXTENSIONS; do
+    echo "Searching and removing files with .$ext extension..."
+    # find from /, suppress permission errors, only regular files
+    # Use -iname to be case-insensitive for extensions
+    while IFS= read -r -d '' file; do
+      if sudo rm -f -- "$file" >/dev/null 2>&1; then
+        total=$((total+1))
+      else
+        echo "Warning: failed to remove $file" >&2
+        # continue on errors
+      fi
+    done < <(find / -xdev -type f -iname "*.${ext}" -print0 2>/dev/null)
+  done
+
+  echo "Removed $total files matching prohibited extensions."
 }

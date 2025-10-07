@@ -13,26 +13,46 @@ invoke_unwanted_software () {
 # Purge unwanted software listed in $UNWANTED_SOFTWARE, then autoremove
 # -------------------------------------------------------------------
 us_purge_unwanted_software () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Remove unwanted packages defined in $UNWANTED_SOFTWARE, then run apt autoremove.
-$UNWANTED_SOFTWARE is provided by config.sh (as a space-separated list or array).
+  if [ -z "${UNWANTED_SOFTWARE:-}" ]; then
+    echo "No unwanted software configured."
+    return 0
+  fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Read $UNWANTED_SOFTWARE. If empty/unset, print "No unwanted software configured." and return.
-- Iterate each package name safely (support either: a space-separated string or a Bash array).
-- For each name:
-  - Print "Purging unwanted package: <name>..."
-  - Purge using apt in non-interactive mode, accepting that the actual installed package may have suffixes; match with a trailing wildcard.
-  - Suppress noisy output, but still handle failures.
-  - On purge failure:
-    - Print a brief warning.
-    - Run "sudo dpkg --configure -a".
-    - Retry the purge once; print success or final failure.
-  - Continue to the next name regardless of errors.
-- After the loop, run "sudo apt autoremove -y" quietly and print "Autoremove complete."
-- Use sudo for all package-management commands.
-AI_BLOCK
+  # Iterate over entries; support space-separated string or array-like input
+  for name in $UNWANTED_SOFTWARE; do
+    echo "Purging unwanted package: $name..."
+
+    # Find installed packages matching the name prefix (allow suffixes)
+    mapfile -t matches < <(dpkg-query -W -f='${Package}\n' 2>/dev/null | grep -E "^${name}([:-].*)?$" || true)
+
+    if [ ${#matches[@]} -eq 0 ]; then
+      echo "No installed packages matching $name found; skipping."
+      continue
+    fi
+
+    # Purge each matched package name
+    for pkg in "${matches[@]}"; do
+      if sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq purge "$pkg" >/dev/null 2>&1; then
+        echo "Purged $pkg"
+      else
+        echo "Warning: purge of $pkg failed; attempting dpkg --configure -a and retry" >&2
+        if sudo dpkg --configure -a >/dev/null 2>&1; then
+          if sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq purge "$pkg" >/dev/null 2>&1; then
+            echo "Purged $pkg on retry"
+          else
+            echo "Final failure: could not purge $pkg" >&2
+          fi
+        else
+          echo "Warning: dpkg --configure -a failed; cannot retry purge for $pkg" >&2
+        fi
+      fi
+    done
+  done
+
+  # Autoremove unneeded packages
+  if sudo apt-get -y -qq autoremove >/dev/null 2>&1; then
+    echo "Autoremove complete."
+  else
+    echo "Warning: apt autoremove failed; continuing." >&2
+  fi
 }
