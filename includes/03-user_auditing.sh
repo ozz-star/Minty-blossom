@@ -19,66 +19,137 @@ invoke_user_auditing () {
 # 1) Interactive audit of local users with valid login shells
 # -------------------------------------------------------------------
 ua_audit_interactive_remove_unauthorized_users () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Enumerate local accounts that have a valid login shell (from /etc/shells). For each such user,
-prompt: "Is <user> an Authorized User? [Y/n]". Default to Y when the user presses Enter.
-If the answer is 'n' or 'N', remove the account and its home directory.
+  # Build list of valid shells from /etc/shells (ignore comments and blank lines)
+  mapfile -t valid_shells < <(grep -E -v '^\s*#|^\s*$' /etc/shells || true)
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Build the list of valid shells from /etc/shells, excluding comments/blank lines.
-- From getent passwd, select accounts whose shell is in that list; emit usernames only.
-- For each username:
-  - Prompt exactly: "Is <user> an Authorized User? [Y/n] " and read input.
-  - Treat empty input as 'Y' (default).
-  - If input matches 'n' or 'N', delete the user and its home (-r / -f as appropriate), then print a confirmation line.
-  - Otherwise print that the user is authorized.
-- Continue on errors for any single user so the loop completes.
-AI_BLOCK
+  if [ ${#valid_shells[@]} -eq 0 ]; then
+    echo "No valid shells found in /etc/shells."
+    return 0
+  fi
+
+  # Create a lookup for valid shells
+  declare -A shell_map
+  for s in "${valid_shells[@]}"; do
+    shell_map["$s"]=1
+  done
+
+  # Collect usernames whose shell is in the valid list
+  mapfile -t users < <(getent passwd | while IFS=: read -r user _ uid gid gecos home shell; do
+    if [ -n "${shell_map[$shell]:-}" ]; then
+      printf '%s\n' "$user"
+    fi
+  done)
+
+  for user in "${users[@]}"; do
+    [ -z "${user}" ] && continue
+    # Prompt exactly as specified
+    printf "Is %s an Authorized User? [Y/n] " "$user"
+    if ! read -r reply; then
+      reply="Y"
+    fi
+
+    # Treat empty input as 'Y'
+    if [ -z "${reply}" ]; then
+      reply="Y"
+    fi
+
+    case "${reply}" in
+      n|N)
+        if sudo userdel -r "$user" >/dev/null 2>&1; then
+          echo "Deleted user: $user"
+        else
+          # Try a forced removal if available
+          if sudo userdel -r --force "$user" >/dev/null 2>&1; then
+            echo "Deleted user: $user"
+          else
+            echo "Warning: failed to delete user: $user" >&2
+          fi
+        fi
+        ;;
+      *)
+        echo "Authorized: $user"
+        ;;
+    esac
+  done
+
+  return 0
 }
 
 # -------------------------------------------------------------------
 # 2) Interactive audit of sudoers; remove unauthorized admins
 # -------------------------------------------------------------------
 ua_audit_interactive_remove_unauthorized_sudoers () {
-  : <<'AI_BLOCK'
-EXPLANATION
-List current members of the 'sudo' group and ask per-user whether they should remain an admin.
-Default answer is Y. If the answer is 'n' or 'N', remove that user from 'sudo'.
+  # Get sudo group members (fourth field). If none, exit.
+  members=$(getent group sudo | awk -F: '{print $4}' || true)
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Get the member list from: getent group sudo (fourth field), split on commas into usernames.
-- For each user:
-  - Prompt exactly: "Is <user> an Authorized Administrator? [Y/n] " and read input.
-  - Default to Y on empty input.
-  - On 'n' or 'N', remove the user from sudo with the Debian-family tool (deluser <user> sudo) and print a confirmation.
-  - Otherwise print that the user is authorized.
-- Continue on errors so the loop completes.
-AI_BLOCK
+  if [ -z "${members}" ]; then
+    echo "No sudo group members found."
+    return 0
+  fi
+
+  # Split on commas and iterate
+  IFS=',' read -r -a users <<< "${members}"
+  for user in "${users[@]}"; do
+    # Trim whitespace
+    user=$(printf '%s' "$user" | xargs)
+    [ -z "${user}" ] && continue
+
+    printf "Is %s an Authorized Administrator? [Y/n] " "$user"
+    if ! read -r reply; then
+      reply="Y"
+    fi
+
+    if [ -z "${reply}" ]; then
+      reply="Y"
+    fi
+
+    case "${reply}" in
+      n|N)
+        if sudo deluser "$user" sudo >/dev/null 2>&1; then
+          echo "Removed sudo privileges from: $user"
+        else
+          echo "Warning: failed to remove sudo for: $user" >&2
+        fi
+        ;;
+      *)
+        echo "Authorized administrator: $user"
+        ;;
+    esac
+  done
+
+  return 0
 }
 
 # -------------------------------------------------------------------
 # 3) Force temporary passwords for all users
 # -------------------------------------------------------------------
 ua_force_temp_passwords () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Set a temporary password for every local account using SHA-512 hashing with chpasswd.
-If $TEMP_PASSWORD is set, use it; otherwise use the default "1CyberPatriot!".
+  # Determine password
+  password=${TEMP_PASSWORD:-1CyberPatriot!}
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Determine the password as: ${TEMP_PASSWORD:-1CyberPatriot!}.
-- Iterate over all usernames from getent passwd.
-- For each username, set "<user>:<password>" via chpasswd with SHA-512.
-- Continue on errors so one failure does not stop the loop.
-- Print a brief status line per user or a final summary.
-AI_BLOCK
+  # Iterate over all local usernames
+  mapfile -t users < <(getent passwd | cut -d: -f1)
+
+  if [ ${#users[@]} -eq 0 ]; then
+    echo "No users found to set temporary passwords."
+    return 0
+  fi
+
+  for user in "${users[@]}"; do
+    [ -z "${user}" ] && continue
+    if printf '%s:%s\n' "$user" "$password" | sudo chpasswd -e -c SHA512 2>/dev/null; then
+      echo "Set temporary password for: $user"
+    else
+      # Fallback: try without -e (some chpasswd don't support -e) and use openssl to generate
+      if printf '%s:%s\n' "$user" "$password" | sudo chpasswd 2>/dev/null; then
+        echo "Set temporary password for: $user"
+      else
+        echo "Warning: failed to set password for: $user" >&2
+      fi
+    fi
+  done
+
+  return 0
 }
 
 # -------------------------------------------------------------------
@@ -104,51 +175,73 @@ AI_BLOCK
 # 5) Set password aging policy for all users (Debian family)
 # -------------------------------------------------------------------
 ua_set_password_aging_policy () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Apply a simple password aging policy to every local account: max age 60 days, min age 10 days, warn 7 days.
+  # Iterate over all local usernames and apply chage policy
+  mapfile -t users < <(getent passwd | cut -d: -f1)
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Iterate over all usernames from getent passwd.
-- For each username, run the chage command with: -M 60 -m 10 -W 7.
-- Continue on errors; print minimal status or a final summary.
-AI_BLOCK
+  if [ ${#users[@]} -eq 0 ]; then
+    echo "No users found for password aging policy."
+    return 0
+  fi
+
+  successes=0
+  failures=0
+  for user in "${users[@]}"; do
+    [ -z "${user}" ] && continue
+    if sudo chage -M 60 -m 10 -W 7 "$user" >/dev/null 2>&1; then
+      successes=$((successes+1))
+    else
+      echo "Warning: failed to set aging for: $user" >&2
+      failures=$((failures+1))
+    fi
+  done
+
+  echo "Password aging applied: ${successes} success, ${failures} failures."
+  return 0
 }
 
 # -------------------------------------------------------------------
 # 6) Set shells for standard users and root to /bin/bash
 # -------------------------------------------------------------------
 ua_set_shells_standard_and_root_bash () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Change the login shell to /bin/bash for accounts with UID 0 (root) and for standard users (UID >= 1000).
+  # Read /etc/passwd and adjust shells for UID 0 and standard users (UID >= 1000)
+  while IFS=: read -r user passwd uid gid gecos home shell; do
+    # Ensure uid is numeric
+    case "$uid" in
+      ''|*[!0-9]*) continue ;;
+    esac
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Read /etc/passwd line by line.
-- If UID is 0 or >= 1000, set the shell to /bin/bash using usermod -s.
-- Print "Changed shell for <user> to /bin/bash." for each change.
-- Continue on errors so the loop completes.
-AI_BLOCK
+    if [ "$uid" -eq 0 ] || [ "$uid" -ge 1000 ]; then
+      if sudo usermod -s /bin/bash "$user" >/dev/null 2>&1; then
+        echo "Changed shell for $user to /bin/bash."
+      else
+        echo "Warning: failed to change shell for: $user" >&2
+        # continue to next user
+      fi
+    fi
+  done < /etc/passwd
+
+  return 0
 }
 
 # -------------------------------------------------------------------
 # 7) Set shells for system accounts to /usr/sbin/nologin
 # -------------------------------------------------------------------
 ua_set_shells_system_accounts_nologin () {
-  : <<'AI_BLOCK'
-EXPLANATION
-For system accounts (UID 1..999), set the shell to /usr/sbin/nologin.
+  # Read /etc/passwd and change shells for system accounts (UID 1..999)
+  while IFS=: read -r user passwd uid gid gecos home shell; do
+    # Ensure uid is numeric
+    case "$uid" in
+      ''|*[!0-9]*) continue ;;
+    esac
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Read /etc/passwd line by line.
-- If UID is between 1 and 999 inclusive, set the shell to /usr/sbin/nologin using usermod -s.
-- Print "Changed shell for <user> to /usr/sbin/nologin." for each change.
-- Continue on errors so the loop completes.
-AI_BLOCK
+    if [ "$uid" -ge 1 ] && [ "$uid" -le 999 ]; then
+      if sudo usermod -s /usr/sbin/nologin "$user" >/dev/null 2>&1; then
+        echo "Changed shell for $user to /usr/sbin/nologin."
+      else
+        echo "Warning: failed to change shell for: $user" >&2
+      fi
+    fi
+  done < /etc/passwd
+
+  return 0
 }

@@ -94,54 +94,60 @@ osu_update_sources_for_distro () {
 # apt update
 # ------------------------------------------------------------
 osu_apt_update () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Update package indexes from all configured sources.
-
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Run the Debian-family command to refresh package lists (apt).
-- Show a short status message before/after.
-- Non-interactive is fine; do not upgrade here.
-AI_BLOCK
+  echo "Updating package lists..."
+  if sudo apt-get update -qq; then
+    echo "Package lists updated."
+  else
+    echo "Failed to update package lists." >&2
+    return 1
+  fi
 }
 
 # ------------------------------------------------------------
 # apt --fix-broken install
 # ------------------------------------------------------------
 osu_fix_broken_packages () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Attempt to fix broken package dependencies.
-
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Run the Debian-family command to fix broken packages.
-- Use a non-interactive approach suitable for scripts.
-- Print a short status line on completion.
-AI_BLOCK
+  # Attempt to fix broken package dependencies non-interactively.
+  # Use DEBIAN_FRONTEND=noninteractive and apt-get --fix-broken install with -y.
+  echo "Attempting to fix broken packages..."
+  if sudo DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold --fix-broken install -yqq; then
+    echo "Broken packages fixed."
+    return 0
+  else
+    echo "Warning: failed to fully fix broken packages." >&2
+    return 1
+  fi
 }
 
 # ------------------------------------------------------------
 # apt-mark: unhold all currently held packages
 # ------------------------------------------------------------
 osu_unhold_packages () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Unhold every package currently marked as "hold" on Debian/Ubuntu/Mint. Do not rely on a predefined list.
+  # Query held packages and unhold them one-by-one.
+  held_list=$(apt-mark showhold 2>/dev/null) || {
+    echo "Warning: failed to query held packages." >&2
+    return 1
+  }
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Query the list of held packages using the appropriate apt-mark command.
-- If none are held, print: "No held packages found." and return.
-- Iterate over each held package name safely (handle spaces/newlines robustly).
-- For each package:
-  - Unhold it via the apt-mark command (use sudo where appropriate).
-  - Print a confirmation line: "Unheld: <package>".
-- Use non-interactive behavior; if unholding one package fails, continue with the rest and print a short warning.
-AI_BLOCK
+  if [ -z "${held_list}" ]; then
+    echo "No held packages found."
+    return 0
+  fi
+
+  # Read into an array safely to handle spaces/newlines robustly
+  IFS=$'\n' read -r -d '' -a held_array <<< "${held_list}"$'\0'
+
+  for pkg in "${held_array[@]}"; do
+    # skip empty entries
+    [ -z "${pkg}" ] && continue
+    if sudo apt-mark unhold -- "${pkg}" >/dev/null 2>&1; then
+      echo "Unheld: ${pkg}"
+    else
+      echo "Warning: failed to unhold: ${pkg}" >&2
+      # continue with next package
+    fi
+  done
+
+  return 0
 }
 
