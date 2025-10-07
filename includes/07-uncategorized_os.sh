@@ -25,223 +25,293 @@ invoke_uncategorized_os () {
 # Home directories: 0700 perms
 # -------------------------------------------------------------------
 uos_home_dir_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Set each first-level directory under /home to mode 0700.
+  # Find first-level directories under /home and chmod them to 0700
+  if [ ! -d /home ]; then
+    echo "/home does not exist; skipping" >&2
+    return 0
+  fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Find directories at depth 1 under /home.
-- For each, chmod 700; print a short confirmation per directory.
-- Continue on errors; do not abort the loop.
-AI_BLOCK
+  # Use find to list directories at depth 1
+  while IFS= read -r -d '' dir; do
+    if sudo chmod 700 "$dir" >/dev/null 2>&1; then
+      echo "Set 0700 on $dir"
+    else
+      echo "Warning: failed to set 0700 on $dir" >&2
+      # continue on errors
+    fi
+  done < <(find /home -maxdepth 1 -mindepth 1 -type d -print0)
 }
 
 # -------------------------------------------------------------------
 # /etc/login.defs: 0600 root:root
 # -------------------------------------------------------------------
 uos_login_defs_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Ensure /etc/login.defs ownership and permissions are strict.
+  target=/etc/login.defs
+  if [ ! -e "$target" ]; then
+    echo "$target not found; skipping" >&2
+    return 0
+  fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- chown root:root /etc/login.defs
-- chmod 0600 /etc/login.defs
-- Print a concise confirmation.
-AI_BLOCK
+  if sudo chown root:root "$target" >/dev/null 2>&1; then
+    echo "Set owner root:root on $target"
+  else
+    echo "Warning: failed to chown $target" >&2
+  fi
+
+  if sudo chmod 0600 "$target" >/dev/null 2>&1; then
+    echo "Set permissions 0600 on $target"
+  else
+    echo "Warning: failed to chmod $target" >&2
+  fi
 }
 
 # -------------------------------------------------------------------
 # shadow/gshadow and backups: 0640 root:shadow
 # -------------------------------------------------------------------
 uos_shadow_gshadow_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Set ownership/permissions on sensitive account DB files and their backups:
-  /etc/shadow     -> root:shadow 0640
-  /etc/shadow-    -> root:shadow 0640
-  /etc/gshadow    -> root:shadow 0640
-  /etc/gshadow-   -> root:shadow 0640
-
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- For each listed file that exists:
-  - chown root:shadow
-  - chmod 0640
-  - Print a confirmation per file; skip cleanly if missing.
-AI_BLOCK
+  files=(/etc/shadow /etc/shadow- /etc/gshadow /etc/gshadow-)
+  for f in "${files[@]}"; do
+    if [ ! -e "$f" ]; then
+      echo "Skipping missing $f"
+      continue
+    fi
+    if sudo chown root:shadow "$f" >/dev/null 2>&1; then
+      echo "Set owner root:shadow on $f"
+    else
+      echo "Warning: failed to chown $f" >&2
+    fi
+    if sudo chmod 0640 "$f" >/dev/null 2>&1; then
+      echo "Set permissions 0640 on $f"
+    else
+      echo "Warning: failed to chmod $f" >&2
+    fi
+  done
 }
 
 # -------------------------------------------------------------------
 # passwd/group and backups: 0644 root:root
 # -------------------------------------------------------------------
 uos_passwd_group_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Set ownership/permissions on:
-  /etc/passwd   -> root:root 0644
-  /etc/passwd-  -> root:root 0644
-  /etc/group    -> root:root 0644
-  /etc/group-   -> root:root 0644
-
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- For each existing file above:
-  - chown root:root
-  - chmod 0644
-  - Print a confirmation per file; skip missing files without error.
-AI_BLOCK
+  files=(/etc/passwd /etc/passwd- /etc/group /etc/group-)
+  for f in "${files[@]}"; do
+    if [ ! -e "$f" ]; then
+      echo "Skipping missing $f"
+      continue
+    fi
+    if sudo chown root:root "$f" >/dev/null 2>&1; then
+      echo "Set owner root:root on $f"
+    else
+      echo "Warning: failed to chown $f" >&2
+    fi
+    if sudo chmod 0644 "$f" >/dev/null 2>&1; then
+      echo "Set permissions 0644 on $f"
+    else
+      echo "Warning: failed to chmod $f" >&2
+    fi
+  done
 }
 
 # -------------------------------------------------------------------
 # GRUB config: 0600 root:root
 # -------------------------------------------------------------------
 uos_grub_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Lock down /boot/grub/grub.cfg.
+  target=/boot/grub/grub.cfg
+  if [ ! -e "$target" ]; then
+    echo "$target not found; skipping" >&2
+    return 0
+  fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- If /boot/grub/grub.cfg exists:
-  - chown root:root
-  - chmod 0600
-  - Print a confirmation.
-- If missing, print a brief note and continue.
-AI_BLOCK
+  if sudo chown root:root "$target" >/dev/null 2>&1; then
+    echo "Set owner root:root on $target"
+  else
+    echo "Warning: failed to chown $target" >&2
+  fi
+
+  if sudo chmod 0600 "$target" >/dev/null 2>&1; then
+    echo "Set permissions 0600 on $target"
+  else
+    echo "Warning: failed to chmod $target" >&2
+  fi
 }
 
 # -------------------------------------------------------------------
 # System.map (if present): 0600 root:root
 # -------------------------------------------------------------------
 uos_system_map_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Restrict any /boot/System.map-* files so only root can read/write.
+  # For each /boot/System.map-* that is a regular file: chown root:root and chmod 0600
+  shopt -s nullglob
+  for f in /boot/System.map-*; do
+    if [ -f "$f" ]; then
+      if sudo chown root:root "$f" >/dev/null 2>&1; then
+        echo "Set owner root:root on $f"
+      else
+        echo "Warning: failed to chown $f" >&2
+        # continue on error
+      fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- For each path matching /boot/System.map-* that exists and is a regular file:
-  - chown root:root
-  - chmod 0600
-  - Print a confirmation per file.
-- Continue on errors for individual files.
-AI_BLOCK
+      if sudo chmod 0600 "$f" >/dev/null 2>&1; then
+        echo "Set permissions 0600 on $f"
+      else
+        echo "Warning: failed to chmod $f" >&2
+        # continue on error
+      fi
+    fi
+  done
+  shopt -u nullglob
 }
 
 # -------------------------------------------------------------------
 # SSH host keys: 0600 (at least RSA & ECDSA)
 # -------------------------------------------------------------------
 uos_ssh_host_keys_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Ensure SSH host private keys are not world/group-readable. At minimum:
-  /etc/ssh/ssh_host_rsa_key
-  /etc/ssh/ssh_host_ecdsa_key
+  # Ensure SSH host private keys have strict permissions (0600).
+  files=(
+    /etc/ssh/ssh_host_rsa_key
+    /etc/ssh/ssh_host_ecdsa_key
+    /etc/ssh/ssh_host_ed25519_key
+    /etc/ssh/ssh_host_dsa_key
+  )
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- For each listed file that exists:
-  - chmod 0600
-  - Print a confirmation per file; skip missing without error.
-AI_BLOCK
+  for f in "${files[@]}"; do
+    if [ ! -e "$f" ]; then
+      # Skip missing files silently (but note via message to stdout)
+      echo "Skipping missing $f"
+      continue
+    fi
+
+    if sudo chmod 0600 "$f" >/dev/null 2>&1; then
+      echo "Set permissions 0600 on $f"
+    else
+      echo "Warning: failed to chmod 0600 on $f" >&2
+      # continue on errors
+    fi
+  done
 }
 
 # -------------------------------------------------------------------
 # Audit rules: remove dangerous bits on /etc/audit/rules.d/*.rules
 # -------------------------------------------------------------------
 uos_audit_rules_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Normalize permissions on files under /etc/audit/rules.d/ ending with .rules:
-- Remove setuid/setgid/sticky and group/world write/execute where present.
+  # Find regular .rules files in /etc/audit/rules.d at maxdepth 1 and normalize perms.
+  dir=/etc/audit/rules.d
+  if [ ! -d "$dir" ]; then
+    echo "$dir does not exist; skipping"
+    return 0
+  fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Find regular files in /etc/audit/rules.d/ with names ending in .rules (maxdepth 1).
-- For each, strip u+s, g+ws, o+wrx (i.e., ensure tight perms) using chmod.
-- Print a confirmation per file; continue on errors.
-AI_BLOCK
+  # Use find to restrict to regular files at depth 1
+  while IFS= read -r -d '' file; do
+    # Attempt to remove setuid, setgid, sticky, group write/execute, and all 'other' perms
+    if sudo chmod u-s,g-s,g-wx,o-rwx "$file" >/dev/null 2>&1; then
+      echo "Normalized permissions on $file"
+    else
+      echo "Warning: failed to normalize permissions on $file" >&2
+      # continue on errors
+    fi
+  done < <(find "$dir" -maxdepth 1 -type f -name '*.rules' -print0)
 }
 
 # -------------------------------------------------------------------
 # Remove world-writable files (clear o+w) on local filesystems
 # -------------------------------------------------------------------
 uos_remove_world_writable_files () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Find world-writable regular files on local filesystems and remove the world-write bit.
+  # Enumerate local mounts and remove world-writable bit from regular files.
+  # df --local -P prints lines like: /dev/sda1  ... /
+  df --local -P | awk 'NR>1 {print $6}' | while IFS= read -r mount; do
+    # ensure mount exists and is a directory
+    [ -d "$mount" ] || continue
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Enumerate local mount points (df --local -P) and scan each with find.
-- Match regular files with world-write permission.
-- For each match, chmod o-w; print a confirmation per file.
-- Continue on errors; avoid descending into other filesystems (-xdev).
-AI_BLOCK
+    # find regular files that are world-writable on this mount, do not traverse into other filesystems
+    while IFS= read -r -d '' file; do
+      if sudo chmod o-w "$file" >/dev/null 2>&1; then
+        echo "Removed world-write on $file"
+      else
+        echo "Warning: failed to remove world-write on $file" >&2
+        # continue on errors
+      fi
+    done < <(find "$mount" -xdev -type f -perm -0002 -print0 2>/dev/null)
+  done
 }
 
 # -------------------------------------------------------------------
 # Report files without user/group ownership (no destructive fix)
 # -------------------------------------------------------------------
 uos_report_unowned_files () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Detect files that have no valid user or group ownership on local filesystems and write a report to $DOCS.
+  # Ensure $DOCS is set; default to /var/log if not
+  : "${DOCS:=/var/log}" >/dev/null
+  mkdir -p "$DOCS" >/dev/null 2>&1 || {
+    echo "Warning: failed to create $DOCS" >&2
+    return 1
+  }
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Ensure $DOCS exists (create if needed).
-- For each local mount (df --local -P):
-  - List paths with -nouser or -nogroup using find -xdev.
-- Write results to $DOCS/unowned_files.txt (overwrite).
-- Print the number of findings and the report path.
-AI_BLOCK
+  out="$DOCS/unowned_files.txt"
+  : >"$out"
+
+  # For each local mount, collect -nouser and -nogroup files (do not cross fs)
+  df --local -P | awk 'NR>1 {print $6}' | while IFS= read -r mount; do
+    [ -d "$mount" ] || continue
+    # find files without a user or group on this mount
+    find "$mount" -xdev \( -nouser -o -nogroup \) -print >>"$out" 2>/dev/null || true
+  done
+
+  # Count findings
+  if [ -f "$out" ]; then
+    count=$(wc -l <"$out" 2>/dev/null || echo 0)
+  else
+    count=0
+  fi
+
+  echo "Found $count unowned/un-grouped paths; report written to $out"
 }
 
 # -------------------------------------------------------------------
 # Normalize /var/log permissions to 0640 for files
 # -------------------------------------------------------------------
 uos_var_log_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Set permissions of regular files under /var/log to 0640.
+  dir=/var/log
+  if [ ! -d "$dir" ]; then
+    echo "$dir does not exist; skipping"
+    return 0
+  fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Traverse /var/log (recursive).
-- For each regular file, chmod 0640.
-- Continue on errors; print a brief summary or per-file confirmations.
-AI_BLOCK
+  count=0
+  failed=0
+  # Find regular files under /var/log
+  while IFS= read -r -d '' f; do
+    if sudo chmod 0640 "$f" >/dev/null 2>&1; then
+      echo "Set permissions 0640 on $f"
+      count=$((count+1))
+    else
+      echo "Warning: failed to chmod 0640 on $f" >&2
+      failed=$((failed+1))
+      # continue on errors
+    fi
+  done < <(find "$dir" -type f -print0 2>/dev/null)
+
+  echo "Normalized permissions on $count files under $dir; $failed failures"
 }
 
 # -------------------------------------------------------------------
 # /tmp and /var/tmp: 1777 root:root
 # -------------------------------------------------------------------
 uos_tmp_permissions () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Ensure /tmp and /var/tmp are sticky world-writable directories owned by root (1777 root:root).
+  dirs=(/tmp /var/tmp)
+  for d in "${dirs[@]}"; do
+    if [ ! -d "$d" ]; then
+      echo "$d does not exist; skipping"
+      continue
+    fi
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- For /tmp and /var/tmp:
-  - chown root:root
-  - chmod 1777
-  - Print a confirmation per directory.
-AI_BLOCK
+    if sudo chown root:root "$d" >/dev/null 2>&1; then
+      echo "Set owner root:root on $d"
+    else
+      echo "Warning: failed to chown $d" >&2
+    fi
+
+    if sudo chmod 1777 "$d" >/dev/null 2>&1; then
+      echo "Set permissions 1777 on $d"
+    else
+      echo "Warning: failed to chmod $d" >&2
+    fi
+  done
 }
