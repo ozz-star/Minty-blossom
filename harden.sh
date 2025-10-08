@@ -1,10 +1,11 @@
-#!/usr/bin/env bash
-#set -euo pipefail
-
+// ...existing code...
 Check for root privileges
 if [[ $EUID -ne 0 ]]; then
-echo "This script must be run as root. Restarting with sudo..."
-sudo "
+  echo "This script must be run as root. Restarting with sudo..."
+  sudo "$0" "$@"
+  exit $?
+fi
+// ...existing code...
 0
 "
 "
