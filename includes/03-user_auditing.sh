@@ -157,17 +157,34 @@ ua_force_temp_passwords () {
 # -------------------------------------------------------------------
 ua_remove_non_root_uid0 () {
   : <<'AI_BLOCK'
-EXPLANATION
-Find accounts with UID 0 other than 'root' and remove them (including home directories).
+// ...existing code...
+# -------------------------------------------------------------------
+# 4) Remove any UID 0 accounts that are not 'root'
+# -------------------------------------------------------------------
+ua_remove_non_root_uid0 () {
+  mapfile -t uid0_users < <(getent passwd | awk -F: '$3 == 0 && $1 != "root" {print $1}')
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Parse /etc/passwd (or getent) for entries with UID exactly 0 where the username != root.
-- For each such username:
-  - Delete the user and its home directory (force where appropriate).
-  - Print a confirmation line.
-- Continue on errors so the loop completes.
+  if [ ${#uid0_users[@]} -eq 0 ]; then
+    echo "No non-root UID 0 accounts found."
+    return 0
+  fi
+
+  for user in "${uid0_users[@]}"; do
+    [ -z "${user}" ] && continue
+    if sudo userdel -r --force "$user" >/dev/null 2>&1; then
+      echo "Removed non-root UID 0 user: $user"
+    else
+      echo "Warning: failed to remove non-root UID 0 user: $user" >&2
+    fi
+  done
+
+  return 0
+}
+
+# -------------------------------------------------------------------
+# 5) Set password aging policy for all users (Debian family)
+# -------------------------------------------------------------------
+// ...existing code...
 AI_BLOCK
 }
 
