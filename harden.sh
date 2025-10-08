@@ -1,4 +1,4 @@
-
+#Reboot for root
 // ...existing code...
 # --- elevation guard (re-exec with sudo if not root) ---
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
