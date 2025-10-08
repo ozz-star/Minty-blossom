@@ -1,17 +1,12 @@
-// ...existing code...
-Check for root privileges
-if [[ $EUID -ne 0 ]]; then
-  echo "This script must be run as root. Restarting with sudo..."
-  sudo "$0" "$@"
-  exit $?
+
+#!/usr/bin/env bash
+#set -euo pipefail
+
+# --- elevation guard (re-exec with sudo if not root) ---
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  exec sudo -E bash "$0" "$@"
 fi
-// ...existing code...
-0
-"
-"
-0""@"
-exit $?
-fi
+
 # --- locate repo root / source config & includes ---
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${ROOT_DIR}/config.sh"
