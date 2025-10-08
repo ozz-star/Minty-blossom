@@ -1,14 +1,17 @@
-// ...existing code...
+#!/usr/bin/env bash
+#set -euo pipefail
+
 # --- elevation guard (re-exec with sudo if not root) ---
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-  echo "This script requires root privileges. Restarting with sudo..."
-  # The following command will re-execute the script as the root user via sudo.
-  # It passes the script path and all of its arguments to the new shell.
-  exec sudo bash "$0" "$@"
+  exec sudo -E bash "$0" "$@"
 fi
 
 # --- locate repo root / source config & includes ---
-// ...existing code...
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${ROOT_DIR}/config.sh"
+
+# shellcheck source=./includes/*.sh
+for f in "${ROOT_DIR}/includes/"*.sh; do source "$f"; done
 
 # --- UI helpers ---
 C_CYAN="$(tput setaf 6 || true)"; C_GREEN="$(tput setaf 2 || true)"
