@@ -1,11 +1,10 @@
-#Reboot for root
 // ...existing code...
 # --- elevation guard (re-exec with sudo if not root) ---
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-  echo "This script requires root privileges. Please enter the root password."
-  # The following command will re-execute the script as the root user.
+  echo "This script requires root privileges. Restarting with sudo..."
+  # The following command will re-execute the script as the root user via sudo.
   # It passes the script path and all of its arguments to the new shell.
-  exec su -c "bash '$0' \"\$@\""
+  exec sudo bash "$0" "$@"
 fi
 
 # --- locate repo root / source config & includes ---
