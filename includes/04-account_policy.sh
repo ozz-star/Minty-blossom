@@ -52,21 +52,49 @@ ap_secure_login_defs () {
 # -------------------------------------------------------------------
 ap_pam_pwquality_inline () {
   : <<'AI_BLOCK'
-EXPLANATION
-Insert a pwquality rule into /etc/pam.d/common-password before the pam_unix.so line.
+// ...existing code...
+# -------------------------------------------------------------------
+# Insert pam_pwquality inline in common-password
+# -------------------------------------------------------------------
+ap_pam_pwquality_inline () {
+  local target="/etc/pam.d/common-password"
+  local line_to_add="password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
 
-Desired line (single line, exact options/order):
-  password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1
+  if [ ! -f "$target" ]; then
+    echo "Warning: $target not found. Skipping pwquality rule." >&2
+    return 1
+  fi
 
+  # Create a timestamped backup
+  local ts
+  ts=$(date +%Y%m%d%H%M%S)
+  sudo cp -a "$target" "${target}.bak.${ts}"
 
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Target file: /etc/pam.d/common-password.
-- Create a timestamped backup before editing.
-- If an equal pwquality line already exists, do nothing.
-- Otherwise insert the exact lieAI_PROMPTne immediately before the first occurrence of pam_unix.so in that file.
-- Ensure the edit is idempotent (running again won�t duplicate).
-- Print a brief confirmation when the line is in plac.
+  # Check if the exact line already exists (ignoring leading/trailing whitespace)
+  if sudo grep -q -x "[[:space:]]*${line_to_add}[[:space:]]*" "$target"; then
+    echo "Password quality rule already in place in $target."
+    return 0
+  fi
+
+  # If not, remove any other pam_pwquality.so lines to ensure idempotency
+  sudo sed -i '/pam_pwquality.so/d' "$target"
+
+  # Insert the desired line before the first occurrence of pam_unix.so
+  # The `i\` command in sed inserts the text before the matched line.
+  if sudo sed -i '/pam_unix.so/i '"$line_to_add" "$target"; then
+    echo "Inserted password quality rule into $target."
+  else
+    echo "Warning: Failed to insert password quality rule into $target." >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# -------------------------------------------------------------------
+# Configure /etc/security/pwquality.conf
+# -------------------------------------------------------------------
+ap_pwquality_conf_file () {
 AI_BLOCK
 }
 
