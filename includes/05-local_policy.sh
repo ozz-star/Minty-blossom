@@ -238,7 +238,7 @@ AI_BLOCK
 # Persist sysctl settings and reload
 # -------------------------------------------------------------------
 lp_sysctl_persist_and_reload () {
-  : <<'AI_BLOCK'
+  : 
 // ...existing code...
 # -------------------------------------------------------------------
 # Persist sysctl settings and reload
