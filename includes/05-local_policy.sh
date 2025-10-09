@@ -316,12 +316,9 @@ lp_sysctl_persist_and_reload () {
 # Secure sudo (dangerous if misused; stub only)
 # -------------------------------------------------------------------
 // ...existing code...
-
 # -------------------------------------------------------------------
-# Secure sudo (dangerous if misused; stub only)
+# Secure sudo (dangerous if misused; Debian/Ubuntu/Mint)
 # -------------------------------------------------------------------
-lp_secure_sudo () {
-// ...existing code...
 lp_secure_sudo () {
   set +e
 
@@ -360,7 +357,6 @@ lp_secure_sudo () {
     echo "Warning: Failed to install sudo package." >&2
   fi
 
-  set -e
   return 0
 }
 // ...existing code...
