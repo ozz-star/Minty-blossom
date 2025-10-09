@@ -16,7 +16,6 @@ fi
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 // ...existing code...
 
-fi
 
 # --- locate repo root / source config & includes ---
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
