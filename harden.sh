@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 #set -euo pipefail
 
-#!/usr/bin/env bash
-#set -euo pipefail
-
 # --- elevation guard (re-exec with sudo or su if not root) ---
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   echo "This script requires root. Elevating..."
@@ -19,34 +16,6 @@ if [ "${EUID:-$(id -u)}" -ne 0 ]; then
     exit 1
   fi
 fi
-// ...existing code...
-```// filepath: c:\Users\Jes\Linux-Fox1\Linux-Fox1\harden.sh
-// ...existing code...
-# --- elevation guard (re-exec with sudo or su if not root) ---
-if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-  echo "This script requires root. Elevating..."
-  if command -v sudo >/dev/null 2>&1; then
-    exec sudo -E --preserve-env=PATH,TERM "${BASH:-bash}" "${BASH_SOURCE[0]:-$0}" "$@"
-  elif command -v su >/dev/null 2>&1; then
-    script_path="${BASH_SOURCE[0]:-$0}"
-    printf -v q_script '%q' "$script_path"
-    printf -v q_args '%q ' "$@"
-    exec su - root -c "${BASH:-bash} $q_script $q_args"
-  else
-    echo "Error: Neither sudo nor su is available; cannot elevate." >&2
-    exit 1
-  fi
-fi
-// ...existing code...
-
-# --- locate repo root / source config & includes ---
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-// ...existing code...
-
-# --- locate repo root / source config & includes ---
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-// ...existing code...2
-
 
 # --- locate repo root / source config & includes ---
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
