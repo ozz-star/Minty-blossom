@@ -4,10 +4,9 @@
 #!/usr/bin/env bash
 #set -euo pipefail
 
-// ...existing code...
 # --- elevation guard (re-exec with sudo or su if not root) ---
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-  echo "This script requires root privileges. Restarting with root..."
+  echo "This script requires root. Elevating..."
   if command -v sudo >/dev/null 2>&1; then
     exec sudo -E --preserve-env=PATH,TERM "${BASH:-bash}" "${BASH_SOURCE[0]:-$0}" "$@"
   elif command -v su >/dev/null 2>&1; then
@@ -25,7 +24,7 @@ fi
 // ...existing code...
 # --- elevation guard (re-exec with sudo or su if not root) ---
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-  echo "This script requires root privileges. Restarting with root..."
+  echo "This script requires root. Elevating..."
   if command -v sudo >/dev/null 2>&1; then
     exec sudo -E --preserve-env=PATH,TERM "${BASH:-bash}" "${BASH_SOURCE[0]:-$0}" "$@"
   elif command -v su >/dev/null 2>&1; then
