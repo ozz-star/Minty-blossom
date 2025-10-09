@@ -4,10 +4,17 @@
 #!/usr/bin/env bash
 #set -euo pipefail
 
+// ...existing code...
 # --- elevation guard (re-exec with sudo if not root) ---
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "This script requires root privileges. Restarting with sudo..."
- sudo "$0" "$@"
+  # 'exec' replaces the current script with the new one, ensuring the old one stops.
+  exec sudo -E bash "$0" "$@"
+fi
+
+# --- locate repo root / source config & includes ---
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+// ...existing code...
 
 fi
 
