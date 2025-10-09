@@ -61,9 +61,7 @@ lp_sysctl_ipv6_default () {
     fi
   done
 }
-# ...existing code...
 
-}
 
 # -------------------------------------------------------------------
 # IPv4 sysctl (all interfaces)
@@ -206,7 +204,6 @@ lp_sysctl_ipv4_misc () {
     fi
   done
 }
-}
 
 # -------------------------------------------------------------------
 # Filesystem & kernel hardening
@@ -329,7 +326,6 @@ lp_sysctl_persist_and_reload () {
   else
     echo "Warning: failed to reload sysctl settings" >&2
   fi
-}
 }
 
 # -------------------------------------------------------------------
