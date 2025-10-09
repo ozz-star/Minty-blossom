@@ -321,18 +321,46 @@ lp_sysctl_persist_and_reload () {
 # Secure sudo (dangerous if misused; stub only)
 # -------------------------------------------------------------------
 lp_secure_sudo () {
-  : <<'AI_BLOCK'
-EXPLANATION
-Harden sudo configuration by clearing drop-ins and reinstalling sudo (Debian/Ubuntu/Mint).
-This is destructive; students should understand risks and test in a VM.
+// ...existing code...
+lp_secure_sudo () {
+  set +e
 
-AI_PROMPT
-Return only Bash code (no markdown, no prose).
-Requirements:
-- Remove all files under /etc/sudoers.d/ (do not delete /etc/sudoers).
-- Purge the sudo package non-interactively.
-- Install sudo again non-interactively.
-- Print confirmation lines for each step.
-- Continue on errors with a warning, but attempt subsequent steps.
-AI_BLOCK
+  __as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+      "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo "$@"
+    else
+      return 126
+    fi
+  }
+
+  # 1) Remove files under /etc/sudoers.d (keep /etc/sudoers)
+  if __as_root bash -c 'if [ -d /etc/sudoers.d ]; then find /etc/sudoers.d -mindepth 1 -type f -print -delete; else exit 2; fi'; then
+    echo "Removed files under /etc/sudoers.d (kept /etc/sudoers)."
+  else
+    case $? in
+      2) echo "Warning: /etc/sudoers.d not found; nothing to remove." >&2 ;;
+      126) echo "Warning: Need root privileges to modify /etc/sudoers.d." >&2 ;;
+      *) echo "Warning: Failed to remove some files under /etc/sudoers.d." >&2 ;;
+    esac
+  fi
+
+  # 2) Purge sudo package non-interactively
+  if __as_root env DEBIAN_FRONTEND=noninteractive apt-get -y purge sudo >/dev/null 2>&1; then
+    echo "Purged sudo package."
+  else
+    echo "Warning: Failed to purge sudo package." >&2
+  fi
+
+  # 3) Install sudo again non-interactively
+  if __as_root env DEBIAN_FRONTEND=noninteractive apt-get -y install sudo >/dev/null 2>&1; then
+    echo "Installed sudo package."
+  else
+    echo "Warning: Failed to install sudo package." >&2
+  fi
+
+  set -e
+  return 0
 }
+// ...existing code...

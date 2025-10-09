@@ -7,7 +7,7 @@
 // ...existing code...
 # --- elevation guard (re-exec with sudo if not root) ---
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-  echo "This script requires root privileges. Restarting with sudo..."
+  echo "This script requires root privileges. Restarting with root..."
   # 'exec' replaces the current script with the new one, ensuring the old one stops.
   exec sudo -E bash "$0" "$@"
 fi
