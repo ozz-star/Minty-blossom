@@ -51,11 +51,6 @@ ap_secure_login_defs () {
 # Insert pam_pwquality inline in common-password
 # -------------------------------------------------------------------
 ap_pam_pwquality_inline () {
-// ...existing code...
-# -------------------------------------------------------------------
-# Insert pam_pwquality inline in common-password
-# -------------------------------------------------------------------
-ap_pam_pwquality_inline () {
   local target="/etc/pam.d/common-password"
   local line_to_add="password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
 
@@ -88,13 +83,6 @@ ap_pam_pwquality_inline () {
   fi
 
   return 0
-}
-
-# -------------------------------------------------------------------
-# Configure /etc/security/pwquality.conf
-# -------------------------------------------------------------------
-ap_pwquality_conf_file () {
-
 }
 
 # -------------------------------------------------------------------
