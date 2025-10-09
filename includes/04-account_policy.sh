@@ -51,7 +51,6 @@ ap_secure_login_defs () {
 # Insert pam_pwquality inline in common-password
 # -------------------------------------------------------------------
 ap_pam_pwquality_inline () {
-  : <<'AI_BLOCK'
 // ...existing code...
 # -------------------------------------------------------------------
 # Insert pam_pwquality inline in common-password
@@ -95,7 +94,7 @@ ap_pam_pwquality_inline () {
 # Configure /etc/security/pwquality.conf
 # -------------------------------------------------------------------
 ap_pwquality_conf_file () {
-AI_BLOCK
+
 }
 
 # -------------------------------------------------------------------

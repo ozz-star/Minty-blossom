@@ -156,7 +156,7 @@ ua_force_temp_passwords () {
 # 4) Remove any UID 0 accounts that are not 'root'
 # -------------------------------------------------------------------
 ua_remove_non_root_uid0 () {
-  : <<'AI_BLOCK'
+  
 // ...existing code...
 # -------------------------------------------------------------------
 # 4) Remove any UID 0 accounts that are not 'root'
@@ -185,8 +185,7 @@ ua_remove_non_root_uid0 () {
 # 5) Set password aging policy for all users (Debian family)
 # -------------------------------------------------------------------
 // ...existing code...
-AI_BLOCK
-}
+
 
 # -------------------------------------------------------------------
 # 5) Set password aging policy for all users (Debian family)
