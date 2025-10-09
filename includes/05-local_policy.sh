@@ -226,7 +226,7 @@ lp_sysctl_fs_kernel () {
     fi
   done
 }
-``'lp_sysctl_fs_kernel () {
+`''lp_sysctl_fs_kernel () {
   local -a settings=(
     "fs.protected_hardlinks=1"
     "fs.protected_symlinks=1"
