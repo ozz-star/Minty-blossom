@@ -19,7 +19,6 @@ invoke_local_policy () {
 # -------------------------------------------------------------------
 # IPv6 sysctl (all interfaces)
 # -------------------------------------------------------------------
-
 lp_sysctl_ipv6_all () {
   local -a settings=(
     "net.ipv6.conf.all.accept_ra=0"
@@ -39,11 +38,9 @@ lp_sysctl_ipv6_all () {
   done
 }
 
-
 # -------------------------------------------------------------------
 # IPv6 sysctl (default interface template)
 # -------------------------------------------------------------------
-# ...existing code...
 lp_sysctl_ipv6_default () {
   local -a settings=(
     "net.ipv6.conf.default.accept_ra=0"
@@ -62,13 +59,10 @@ lp_sysctl_ipv6_default () {
   done
 }
 
-
 # -------------------------------------------------------------------
 # IPv4 sysctl (all interfaces)
 # -------------------------------------------------------------------
 lp_sysctl_ipv4_all () {
-# ...existing code...
-lp_sysctl_ipv4_all () {
   local -a settings=(
     "net.ipv4.conf.all.accept_redirects=0"
     "net.ipv4.conf.all.accept_source_route=0"
@@ -88,30 +82,6 @@ lp_sysctl_ipv4_all () {
     fi
   done
 }
-# ...existing code...
-```# filepath: c:\Users\Jes\Linux-Fox1\Linux-Fox1\includes\05-local_policy.sh
-# ...existing code...
-lp_sysctl_ipv4_all () {
-  local -a settings=(
-    "net.ipv4.conf.all.accept_redirects=0"
-    "net.ipv4.conf.all.accept_source_route=0"
-    "net.ipv4.conf.all.log_martians=1"
-    "net.ipv4.conf.all.rp_filter=1"
-    "net.ipv4.conf.all.secure_redirects=0"
-    "net.ipv4.conf.all.send_redirects=0"
-  )
-  local item key val
-  for item in "${settings[@]}"; do
-    key="${item%%=*}"
-    val="${item#*=}"
-    if sysctl -w "$key=$val" >/dev/null 2>&1; then
-      echo "set $key=$val"
-    else
-      echo "failed $key=$val" >&2
-    fi
-  done
-}
-# ...existing code...
 
 # -------------------------------------------------------------------
 # IPv4 sysctl (default interface template)
@@ -136,52 +106,6 @@ lp_sysctl_ipv4_default () {
     fi
   done
 }
-  
-// ...existing code...
-lp_sysctl_ipv4_default () {
-  local -a settings=(
-    "net.ipv4.conf.default.accept_redirects=0"
-    "net.ipv4.conf.default.accept_source_route=0"
-    "net.ipv4.conf.default.log_martians=1"
-    "net.ipv4.conf.default.rp_filter=1"
-    "net.ipv4.conf.default.secure_redirects=0"
-    "net.ipv4.conf.default.send_redirects=0"
-  )
-  local item key val
-  for item in "${settings[@]}"; do
-    key="${item%%=*}"
-    val="${item#*=}"
-    if sysctl -w "$key=$val" >/dev/null 2>&1; then
-      echo "set $key=$val"
-    else
-      echo "failed $key=$val" >&2
-    fi
-  done
-}
-// ...existing code...
-```// filepath: c:\Users\Jes\Linux-Fox1\Linux-Fox1\includes\05-local_policy.sh
-// ...existing code...
-lp_sysctl_ipv4_default () {
-  local -a settings=(
-    "net.ipv4.conf.default.accept_redirects=0"
-    "net.ipv4.conf.default.accept_source_route=0"
-    "net.ipv4.conf.default.log_martians=1"
-    "net.ipv4.conf.default.rp_filter=1"
-    "net.ipv4.conf.default.secure_redirects=0"
-    "net.ipv4.conf.default.send_redirects=0"
-  )
-  local item key val
-  for item in "${settings[@]}"; do
-    key="${item%%=*}"
-    val="${item#*=}"
-    if sysctl -w "$key=$val" >/dev/null 2>&1; then
-      echo "set $key=$val"
-    else
-      echo "failed $key=$val" >&2
-    fi
-  done
-}
-// ...existing code...
 
 # -------------------------------------------------------------------
 # IPv4 misc (ICMP, TCP, forwarding)
@@ -226,24 +150,6 @@ lp_sysctl_fs_kernel () {
     fi
   done
 }
-`''lp_sysctl_fs_kernel () {
-  local -a settings=(
-    "fs.protected_hardlinks=1"
-    "fs.protected_symlinks=1"
-    "fs.suid_dumpable=0"
-    "kernel.randomize_va_space=2"
-  )
-  local item key val
-  for item in "${settings[@]}"; do
-    key="${item%%=*}"
-    val="${item#*=}"
-    if sysctl -w "$key=$val" >/dev/null 2>&1; then
-      echo "set $key=$val"
-    else
-      echo "failed $key=$val" >&2
-    fi
-  done
-}
 
 # -------------------------------------------------------------------
 # Persist sysctl settings and reload
@@ -253,7 +159,6 @@ lp_sysctl_persist_and_reload () {
   local tmp
   tmp="$(mktemp)" || { echo "Warning: mktemp failed" >&2; return 1; }
 
-  # Keys managed by this script (match earlier runtime changes)
   local -a keys=(
     net.ipv6.conf.all.accept_ra
     net.ipv6.conf.all.accept_redirects
@@ -329,7 +234,7 @@ lp_sysctl_persist_and_reload () {
 }
 
 # -------------------------------------------------------------------
-# Secure sudo (dangerous if misused; stub only)
+# Secure sudo (dangerous if misused; Debian/Ubuntu/Mint)
 # -------------------------------------------------------------------
 lp_secure_sudo () {
   local _restore_errexit=0
