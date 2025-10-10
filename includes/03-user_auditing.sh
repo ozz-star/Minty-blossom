@@ -125,7 +125,7 @@ ua_audit_interactive_remove_unauthorized_sudoers () {
 # -------------------------------------------------------------------
 ua_force_temp_passwords () {
   # Determine password
-  password=${TEMP_PASSWORD:-1CyberPatriot!}
+  password=${TEMP_PASSWORD:1CyberPatriot!}
 
   # Iterate over all local usernames
   mapfile -t users < <(getent passwd | cut -d: -f1)
