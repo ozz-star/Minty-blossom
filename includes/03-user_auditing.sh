@@ -18,28 +18,35 @@ invoke_user_auditing () {
     read -rp $'Enter choice: ' choice
     case "$choice" in
       1)
+        echo -e "${GREEN}[User Auditing] Running: Interactive audit of local users${NC}"
         ua_audit_interactive_remove_unauthorized_users
         ;;
       2)
+        echo -e "${GREEN}[User Auditing] Running: Interactive audit of sudoers${NC}"
         ua_audit_interactive_remove_unauthorized_sudoers
         ;;
       3)
+        echo -e "${GREEN}[User Auditing] Running: Set passwords for all users${NC}"
         ua_force_temp_passwords
         ;;
       4)
+        echo -e "${GREEN}[User Auditing] Running: Remove non-root UID 0 accounts${NC}"
         ua_remove_non_root_uid0
         ;;
       5)
+        echo -e "${GREEN}[User Auditing] Running: Set password aging policy${NC}"
         ua_set_password_aging_policy
         ;;
       6)
+        echo -e "${GREEN}[User Auditing] Running: Set shells for standard users and root${NC}"
         ua_set_shells_standard_and_root_bash
         ;;
       7)
+        echo -e "${GREEN}[User Auditing] Running: Set shells for system accounts${NC}"
         ua_set_shells_system_accounts_nologin
         ;;
       a|A)
-        echo -e "${CYAN}[User Auditing] Running all sections...${NC}"
+        echo -e "${GREEN}[User Auditing] Running all sections...${NC}"
         ua_audit_interactive_remove_unauthorized_users
         ua_audit_interactive_remove_unauthorized_sudoers
         ua_force_temp_passwords
@@ -47,7 +54,7 @@ invoke_user_auditing () {
         ua_set_password_aging_policy
         ua_set_shells_standard_and_root_bash
         ua_set_shells_system_accounts_nologin
-        echo -e "${CYAN}[User Auditing] Completed all sections.${NC}"
+        echo -e "${GREEN}[User Auditing] Completed all sections.${NC}"
         ;;
       b|B|q|Q)
         # Return to main menu
