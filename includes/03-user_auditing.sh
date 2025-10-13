@@ -3,15 +3,19 @@ set -euo pipefail
 
 invoke_user_auditing () {
   # Interactive submenu for user auditing sections
+  # Track completed submenu items locally
+  declare -A UA_COMPLETED=()
+
   while true; do
     echo -e "${CYAN}\n[User Auditing] Menu${NC}"
-    printf "1) Interactive audit of local users with valid login shells\n"
-    printf "2) Interactive audit of sudoers; remove unauthorized admins\n"
-    printf "3) Set passwords for all users\n"
-    printf "4) Remove any UID 0 accounts that are not 'root'\n"
-    printf "5) Set password aging policy for all users\n"
-    printf "6) Set shells for standard users and root to /bin/bash\n"
-    printf "7) Set shells for system accounts to /usr/sbin/nologin\n"
+    # Show items green if completed
+    if [ "${UA_COMPLETED[1]:-0}" = "1" ]; then printf "%b1) Interactive audit of local users with valid login shells%b\n" "$GREEN" "$NC"; else printf "1) Interactive audit of local users with valid login shells\n"; fi
+    if [ "${UA_COMPLETED[2]:-0}" = "1" ]; then printf "%b2) Interactive audit of sudoers; remove unauthorized admins%b\n" "$GREEN" "$NC"; else printf "2) Interactive audit of sudoers; remove unauthorized admins\n"; fi
+    if [ "${UA_COMPLETED[3]:-0}" = "1" ]; then printf "%b3) Set passwords for all users%b\n" "$GREEN" "$NC"; else printf "3) Set passwords for all users\n"; fi
+    if [ "${UA_COMPLETED[4]:-0}" = "1" ]; then printf "%b4) Remove any UID 0 accounts that are not 'root'%b\n" "$GREEN" "$NC"; else printf "4) Remove any UID 0 accounts that are not 'root'\n"; fi
+    if [ "${UA_COMPLETED[5]:-0}" = "1" ]; then printf "%b5) Set password aging policy for all users%b\n" "$GREEN" "$NC"; else printf "5) Set password aging policy for all users\n"; fi
+    if [ "${UA_COMPLETED[6]:-0}" = "1" ]; then printf "%b6) Set shells for standard users and root to /bin/bash%b\n" "$GREEN" "$NC"; else printf "6) Set shells for standard users and root to /bin/bash\n"; fi
+    if [ "${UA_COMPLETED[7]:-0}" = "1" ]; then printf "%b7) Set shells for system accounts to /usr/sbin/nologin%b\n" "$GREEN" "$NC"; else printf "7) Set shells for system accounts to /usr/sbin/nologin\n"; fi
     printf "a) Run ALL of the above in sequence\n"
     printf "b) Back to main menu\n"
 
@@ -20,40 +24,47 @@ invoke_user_auditing () {
       1)
         echo -e "${GREEN}[User Auditing] Running: Interactive audit of local users${NC}"
         ua_audit_interactive_remove_unauthorized_users
+        UA_COMPLETED[1]=1
         ;;
       2)
         echo -e "${GREEN}[User Auditing] Running: Interactive audit of sudoers${NC}"
         ua_audit_interactive_remove_unauthorized_sudoers
+        UA_COMPLETED[2]=1
         ;;
       3)
         echo -e "${GREEN}[User Auditing] Running: Set passwords for all users${NC}"
         ua_force_temp_passwords
+        UA_COMPLETED[3]=1
         ;;
       4)
         echo -e "${GREEN}[User Auditing] Running: Remove non-root UID 0 accounts${NC}"
         ua_remove_non_root_uid0
+        UA_COMPLETED[4]=1
         ;;
       5)
         echo -e "${GREEN}[User Auditing] Running: Set password aging policy${NC}"
         ua_set_password_aging_policy
+        UA_COMPLETED[5]=1
         ;;
       6)
         echo -e "${GREEN}[User Auditing] Running: Set shells for standard users and root${NC}"
         ua_set_shells_standard_and_root_bash
+        UA_COMPLETED[6]=1
         ;;
       7)
         echo -e "${GREEN}[User Auditing] Running: Set shells for system accounts${NC}"
         ua_set_shells_system_accounts_nologin
+        UA_COMPLETED[7]=1
         ;;
       a|A)
         echo -e "${GREEN}[User Auditing] Running all sections...${NC}"
-        ua_audit_interactive_remove_unauthorized_users
-        ua_audit_interactive_remove_unauthorized_sudoers
-        ua_force_temp_passwords
-        ua_remove_non_root_uid0
-        ua_set_password_aging_policy
-        ua_set_shells_standard_and_root_bash
-        ua_set_shells_system_accounts_nologin
+        ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
+        ua_audit_interactive_remove_unauthorized_sudoers; UA_COMPLETED[2]=1
+        ua_force_temp_passwords; UA_COMPLETED[3]=1
+        ua_remove_non_root_uid0; UA_COMPLETED[4]=1
+        ua_set_password_aging_policy; UA_COMPLETED[5]=1
+        ua_set_shells_standard_and_root_bash; UA_COMPLETED[6]=1
+        ua_set_shells_system_accounts_nologin; UA_COMPLETED[7]=1
         echo -e "${GREEN}[User Auditing] Completed all sections.${NC}"
         ;;
       b|B|q|Q)
