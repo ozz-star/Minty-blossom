@@ -170,8 +170,13 @@ ua_audit_interactive_remove_unauthorized_sudoers () {
 # 3) Set a consistent password for all users
 # -------------------------------------------------------------------
 ua_force_temp_passwords () {
+<<<<<<< HEAD
   # Allow override via TEMP_PASSWORD or PASSWORD env vars; default to requested value
   password=${TEMP_PASSWORD:-${PASSWORD:-1CyberPatriot!}}
+=======
+  # Determine password
+  password=${TEMP_PASSWORD:1CyberPatriot!}
+>>>>>>> 49eed81095500aca9aad54982283f9dba09b1b1e
 
   # Gather all local usernames
   mapfile -t users < <(getent passwd | cut -d: -f1)
