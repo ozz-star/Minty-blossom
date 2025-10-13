@@ -8,7 +8,7 @@ invoke_user_auditing () {
 
   while true; do
     echo -e "${CYAN}\n[User Auditing] Menu${NC}"
-    # Show items green if completed
+  # Show items green if completed
     if [ "${UA_COMPLETED[1]:-0}" = "1" ]; then printf "%b1) Interactive audit of local users with valid login shells%b\n" "$GREEN" "$NC"; else printf "1) Interactive audit of local users with valid login shells\n"; fi
     if [ "${UA_COMPLETED[2]:-0}" = "1" ]; then printf "%b2) Interactive audit of sudoers; remove unauthorized admins%b\n" "$GREEN" "$NC"; else printf "2) Interactive audit of sudoers; remove unauthorized admins\n"; fi
     if [ "${UA_COMPLETED[3]:-0}" = "1" ]; then printf "%b3) Set passwords for all users%b\n" "$GREEN" "$NC"; else printf "3) Set passwords for all users\n"; fi
@@ -16,11 +16,13 @@ invoke_user_auditing () {
     if [ "${UA_COMPLETED[5]:-0}" = "1" ]; then printf "%b5) Set password aging policy for all users%b\n" "$GREEN" "$NC"; else printf "5) Set password aging policy for all users\n"; fi
     if [ "${UA_COMPLETED[6]:-0}" = "1" ]; then printf "%b6) Set shells for standard users and root to /bin/bash%b\n" "$GREEN" "$NC"; else printf "6) Set shells for standard users and root to /bin/bash\n"; fi
     if [ "${UA_COMPLETED[7]:-0}" = "1" ]; then printf "%b7) Set shells for system accounts to /usr/sbin/nologin%b\n" "$GREEN" "$NC"; else printf "7) Set shells for system accounts to /usr/sbin/nologin\n"; fi
+  if [ "${UA_COMPLETED[8]:-0}" = "1" ]; then printf "%b8) Create a new user%b\n" "$GREEN" "$NC"; else printf "8) Create a new user\n"; fi
+  if [ "${UA_COMPLETED[9]:-0}" = "1" ]; then printf "%b9) Add a user to groups%b\n" "$GREEN" "$NC"; else printf "9) Add a user to groups\n"; fi
     printf "a) Run ALL of the above in sequence\n"
     printf "b) Back to main menu\n"
 
     read -rp $'Enter choice: ' choice
-    case "$choice" in
+  case "$choice" in
       1)
         echo -e "${GREEN}[User Auditing] Running: Interactive audit of local users${NC}"
         ua_audit_interactive_remove_unauthorized_users
@@ -56,6 +58,16 @@ invoke_user_auditing () {
         ua_set_shells_system_accounts_nologin
         UA_COMPLETED[7]=1
         ;;
+      8)
+        echo -e "${GREEN}[User Auditing] Running: Create a new user${NC}"
+        ua_create_user
+        UA_COMPLETED[8]=1
+        ;;
+      9)
+        echo -e "${GREEN}[User Auditing] Running: Add a user to groups${NC}"
+        ua_add_user_to_groups
+        UA_COMPLETED[9]=1
+        ;;
       a|A)
         echo -e "${GREEN}[User Auditing] Running all sections...${NC}"
         ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
@@ -65,6 +77,8 @@ invoke_user_auditing () {
         ua_set_password_aging_policy; UA_COMPLETED[5]=1
         ua_set_shells_standard_and_root_bash; UA_COMPLETED[6]=1
         ua_set_shells_system_accounts_nologin; UA_COMPLETED[7]=1
+        ua_create_user; UA_COMPLETED[8]=1
+        ua_add_user_to_groups; UA_COMPLETED[9]=1
         echo -e "${GREEN}[User Auditing] Completed all sections.${NC}"
         ;;
       b|B|q|Q)
