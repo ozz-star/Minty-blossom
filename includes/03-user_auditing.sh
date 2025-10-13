@@ -2,17 +2,63 @@
 set -euo pipefail
 
 invoke_user_auditing () {
-  echo -e "${CYAN}[User Auditing] Start${NC}"
+  # Interactive submenu for user auditing sections
+  while true; do
+    echo -e "${CYAN}\n[User Auditing] Menu${NC}"
+    printf "1) Interactive audit of local users with valid login shells\n"
+    printf "2) Interactive audit of sudoers; remove unauthorized admins\n"
+    printf "3) Set passwords for all users\n"
+    printf "4) Remove any UID 0 accounts that are not 'root'\n"
+    printf "5) Set password aging policy for all users\n"
+    printf "6) Set shells for standard users and root to /bin/bash\n"
+    printf "7) Set shells for system accounts to /usr/sbin/nologin\n"
+    printf "a) Run ALL of the above in sequence\n"
+    printf "b) Back to main menu\n"
 
-  ua_audit_interactive_remove_unauthorized_users
-  ua_audit_interactive_remove_unauthorized_sudoers
-  ua_force_temp_passwords
-  ua_remove_non_root_uid0
-  ua_set_password_aging_policy
-  ua_set_shells_standard_and_root_bash
-  ua_set_shells_system_accounts_nologin
-
-  echo -e "${CYAN}[User Auditing] Done${NC}"
+    read -rp $'Enter choice: ' choice
+    case "$choice" in
+      1)
+        ua_audit_interactive_remove_unauthorized_users
+        ;;
+      2)
+        ua_audit_interactive_remove_unauthorized_sudoers
+        ;;
+      3)
+        ua_force_temp_passwords
+        ;;
+      4)
+        ua_remove_non_root_uid0
+        ;;
+      5)
+        ua_set_password_aging_policy
+        ;;
+      6)
+        ua_set_shells_standard_and_root_bash
+        ;;
+      7)
+        ua_set_shells_system_accounts_nologin
+        ;;
+      a|A)
+        echo -e "${CYAN}[User Auditing] Running all sections...${NC}"
+        ua_audit_interactive_remove_unauthorized_users
+        ua_audit_interactive_remove_unauthorized_sudoers
+        ua_force_temp_passwords
+        ua_remove_non_root_uid0
+        ua_set_password_aging_policy
+        ua_set_shells_standard_and_root_bash
+        ua_set_shells_system_accounts_nologin
+        echo -e "${CYAN}[User Auditing] Completed all sections.${NC}"
+        ;;
+      b|B|q|Q)
+        # Return to main menu
+        echo -e "${CYAN}[User Auditing] Returning to main menu.${NC}"
+        break
+        ;;
+      *)
+        echo -e "${C_RED}Invalid option${C_RESET}"
+        ;;
+    esac
+  done
 }
 
 # -------------------------------------------------------------------
@@ -121,31 +167,45 @@ ua_audit_interactive_remove_unauthorized_sudoers () {
 }
 
 # -------------------------------------------------------------------
-# 3) Force temporary passwords for all users
+# 3) Set a consistent password for all users
 # -------------------------------------------------------------------
 ua_force_temp_passwords () {
-  # Determine password
-  password=${TEMP_PASSWORD:-1CyberPatriot!}
+  # Allow override via TEMP_PASSWORD or PASSWORD env vars; default to requested value
+  password=${TEMP_PASSWORD:-${PASSWORD:-1CyberPatriot!}}
 
-  # Iterate over all local usernames
+  # Gather all local usernames
   mapfile -t users < <(getent passwd | cut -d: -f1)
 
   if [ ${#users[@]} -eq 0 ]; then
-    echo "No users found to set temporary passwords."
+    echo "No users found to set passwords."
     return 0
   fi
 
   for user in "${users[@]}"; do
     [ -z "${user}" ] && continue
-    if printf '%s:%s\n' "$user" "$password" | sudo chpasswd -e -c SHA512 2>/dev/null; then
-      echo "Set temporary password for: $user"
-    else
-      # Fallback: try without -e (some chpasswd don't support -e) and use openssl to generate
-      if printf '%s:%s\n' "$user" "$password" | sudo chpasswd 2>/dev/null; then
-        echo "Set temporary password for: $user"
+
+    # Try to generate a SHA-512 crypt hash for the password using openssl.
+    hashed=""
+    if command -v openssl >/dev/null 2>&1; then
+      # openssl passwd -6 generates a SHA-512 based hash
+      hashed=$(openssl passwd -6 "$password" 2>/dev/null || true)
+    fi
+
+    if [ -n "${hashed}" ]; then
+      # chpasswd -e accepts an encrypted password hash
+      if printf '%s:%s\n' "$user" "$hashed" | sudo chpasswd -e 2>/dev/null; then
+        echo "Set password for: $user"
+        continue
       else
-        echo "Warning: failed to set password for: $user" >&2
+        echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
       fi
+    fi
+
+    # Fallback: set the plain password via chpasswd (less preferred)
+    if printf '%s:%s\n' "$user" "$password" | sudo chpasswd 2>/dev/null; then
+      echo "Set plaintext password for: $user (fallback)"
+    else
+      echo "Warning: failed to set password for: $user" >&2
     fi
   done
 
