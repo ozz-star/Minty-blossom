@@ -246,6 +246,98 @@ ua_force_temp_passwords () {
 
 
 # -------------------------------------------------------------------
+# 3.1) Create a new user interactively
+# -------------------------------------------------------------------
+ua_create_user () {
+  read -rp $'Enter new username: ' newuser
+  [ -z "${newuser}" ] && { echo "No username entered."; return 1; }
+
+  # Check if user exists
+  if getent passwd "$newuser" >/dev/null 2>&1; then
+    echo "User '$newuser' already exists."; return 1
+  fi
+
+  read -rp $'Enter full name (GECOS) (optional): ' gecos
+  read -rp $'Create home directory? [Y/n] ' create_home
+  if [ -z "${create_home}" ] || [[ "${create_home}" =~ ^[Yy] ]]; then
+    home_flag="-m"
+  else
+    home_flag="-M"
+  fi
+
+  # Create the user
+  if sudo useradd $home_flag -c "$gecos" "$newuser" >/dev/null 2>&1; then
+    echo -e "${GREEN}Created user: $newuser${NC}"
+    # Optionally set a password
+    read -rp $'Set password now? [Y/n] ' setpw
+    if [ -z "${setpw}" ] || [[ "${setpw}" =~ ^[Yy] ]]; then
+      if command -v openssl >/dev/null 2>&1; then
+        # default to configured password variable if present, else prompt
+        default_pw="${TEMP_PASSWORD:-${PASSWORD:-}}"
+        if [ -z "${default_pw}" ]; then
+          read -srp $'Enter password for new user: ' p1; echo; read -srp $'Confirm password: ' p2; echo
+          if [ "$p1" != "$p2" ]; then echo "Passwords do not match."; return 1; fi
+          pw="$p1"
+        else
+          pw="$default_pw"
+        fi
+        hashed=$(openssl passwd -6 "$pw" 2>/dev/null || true)
+        if [ -n "$hashed" ]; then
+          printf '%s:%s\n' "$newuser" "$hashed" | sudo chpasswd -e >/dev/null 2>&1 && echo -e "${GREEN}Password set for $newuser${NC}" || echo "Warning: failed to set hashed password" >&2
+        else
+          printf '%s:%s\n' "$newuser" "$pw" | sudo chpasswd >/dev/null 2>&1 && echo -e "${GREEN}Password set for $newuser (plaintext fallback)${NC}" || echo "Warning: failed to set password" >&2
+        fi
+      else
+        echo "Warning: openssl not available; skipping password set." >&2
+      fi
+    fi
+    return 0
+  else
+    echo "Warning: failed to create user: $newuser" >&2
+    return 1
+  fi
+}
+
+
+# -------------------------------------------------------------------
+# 3.2) Add an existing user to groups interactively
+# -------------------------------------------------------------------
+ua_add_user_to_groups () {
+  read -rp $'Enter username to modify: ' tgt_user
+  [ -z "${tgt_user}" ] && { echo "No username entered."; return 1; }
+  if ! getent passwd "$tgt_user" >/dev/null 2>&1; then
+    echo "User '$tgt_user' does not exist."; return 1
+  fi
+
+  # Show all groups
+  echo -e "${CYAN}Available groups:${NC}"
+  getent group | cut -d: -f1 | column
+
+  # Prompt for comma-separated groups to add
+  read -rp $'Enter comma-separated group names to add the user to: ' groups
+  [ -z "${groups}" ] && { echo "No groups entered."; return 1; }
+
+  # Iterate groups, trim whitespace, and attempt to add
+  IFS=',' read -r -a garr <<< "$groups"
+  for g in "${garr[@]}"; do
+    g=$(printf '%s' "$g" | xargs)
+    [ -z "$g" ] && continue
+    if getent group "$g" >/dev/null 2>&1; then
+      if sudo usermod -a -G "$g" "$tgt_user" >/dev/null 2>&1; then
+        echo -e "${GREEN}Added $tgt_user to group $g${NC}"
+      else
+        echo "Warning: failed to add $tgt_user to $g" >&2
+      fi
+    else
+      echo "Warning: group '$g' does not exist." >&2
+    fi
+  done
+
+  return 0
+}
+
+
+# -------------------------------------------------------------------
 # 4) Remove any UID 0 accounts that are not 'root'
 # -------------------------------------------------------------------
 ua_remove_non_root_uid0 () {
