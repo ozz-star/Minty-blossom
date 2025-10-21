@@ -33,49 +33,79 @@ invoke_user_auditing () {
         ua_audit_interactive_remove_unauthorized_sudoers
         UA_COMPLETED[2]=1
         ;;
-              ;;
+      
       3)
         echo -e "${GREEN}[User Auditing] Running: Set passwords for all users${NC}"
-        ua_force_temp_passwords
         ua_set_passwords_for_all
         UA_COMPLETED[3]=1
         ;;
       4)
-@@ -70,9 +70,9 @@ invoke_user_auditing () {
+        echo -e "${GREEN}[User Auditing] Running: Remove any UID 0 accounts that are not 'root'${NC}"
+        ua_remove_non_root_uid0
+        UA_COMPLETED[4]=1
+        ;;
+      5)
+        echo -e "${GREEN}[User Auditing] Running: Set password aging policy for all users${NC}"
+        ua_set_password_aging_policy
+        UA_COMPLETED[5]=1
+        ;;
+      6)
+        echo -e "${GREEN}[User Auditing] Running: Set shells for standard users and root to /bin/bash${NC}"
+        ua_set_shells_standard_and_root_bash
+        UA_COMPLETED[6]=1
+        ;;
+      7)
+        echo -e "${GREEN}[User Auditing] Running: Set shells for system accounts to /usr/sbin/nologin${NC}"
+        ua_set_shells_system_accounts_nologin
+        UA_COMPLETED[7]=1
+        ;;
+      8)
+        echo -e "${GREEN}[User Auditing] Running: Create a new user${NC}"
+        ua_create_user
+        UA_COMPLETED[8]=1
+        ;;
+      9)
+        echo -e "${GREEN}[User Auditing] Running: Add a user to groups${NC}"
+        ua_add_user_to_groups
+        UA_COMPLETED[9]=1
         ;;
       a|A)
         echo -e "${GREEN}[User Auditing] Running all sections...${NC}"
         ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
         ua_audit_interactive_remove_unauthorized_sudoers; UA_COMPLETED[2]=1
-        ua_force_temp_passwords; UA_COMPLETED[3]=1
+    ua_set_passwords_for_all; UA_COMPLETED[3]=1
   ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
   ua_audit_interactive_remove_unauthorized_sudoers; UA_COMPLETED[2]=1
-  ua_set_passwords_for_all; UA_COMPLETED[3]=1
         ua_remove_non_root_uid0; UA_COMPLETED[4]=1
         ua_set_password_aging_policy; UA_COMPLETED[5]=1
         ua_set_shells_standard_and_root_bash; UA_COMPLETED[6]=1
-@@ -186,11 +186,11 @@ ua_audit_interactive_remove_unauthorized_sudoers () {
-}
+        ua_set_shells_system_accounts_nologin; UA_COMPLETED[7]=1
+
 
 # -------------------------------------------------------------------
 # 3) Set a consistent password for all users
 # 3) Set a full password for all users
 # -------------------------------------------------------------------
-ua_force_temp_passwords () {
-  # Allow override via TEMP_PASSWORD or PASSWORD env vars; default to requested value
-  password=${TEMP_PASSWORD:-${PASSWORD:-1CyberPatriot!}}
 ua_set_passwords_for_all () {
   # Allow override via PASSWORD env var; default to requested value
-  password=${PASSWORD:-1CyberPatriot!}
+  password="${PASSWORD:-1CyberPatriot!}"
 
   # Gather all local usernames
   mapfile -t users < <(getent passwd | cut -d: -f1)
-@@ -216,13 +216,13 @@ ua_force_temp_passwords () {
-        echo "Set password for: $user"
-        continue
-      else
-        echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
-        echo "Warning: failed to set hashed password for: $user; will try plaintext method" >&2
+  for user in "${users[@]}"; do
+    # Skip system users (UID < 1000)
+    if [ "$(id -u "$user")" -lt 1000 ]; then
+      echo "Skipping system user: $user"
+      continue
+    fi
+
+    # Attempt to set the password using the preferred method (hashed)
+    if printf '%s:%s\n' "$user" "$password" | sudo chpasswd -e 2>/dev/null; then
+      echo "Set password for: $user"
+      continue
+    else
+      echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
+      echo "Warning: failed to set hashed password for: $user; will try plaintext method" >&2
       fi
     fi
 
