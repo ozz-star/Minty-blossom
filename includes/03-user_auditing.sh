@@ -106,7 +106,6 @@ ua_set_passwords_for_all () {
     else
       echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
       echo "Warning: failed to set hashed password for: $user; will try plaintext method" >&2
-      fi
     fi
 
     # Fallback: set the plain password via chpasswd (less preferred)
@@ -117,12 +116,29 @@ ua_set_passwords_for_all () {
     else
       echo "Warning: failed to set password for: $user" >&2
     fi
-@@ -259,8 +259,8 @@ ua_create_user () {
-    read -rp $'Set password now? [Y/n] ' setpw
-    if [ -z "${setpw}" ] || [[ "${setpw}" =~ ^[Yy] ]]; then
-      if command -v openssl >/dev/null 2>&1; then
-        # default to configured password variable if present, else prompt
-        default_pw="${TEMP_PASSWORD:-${PASSWORD:-}}"
+  done
+  return 0
+}
+
+# -------------------------------------------------------------------
+# 3.2) Create a new user
+# -------------------------------------------------------------------
+ua_create_user () {
+  read -rp $'Enter username for new user: ' newuser
+  [ -z "${newuser}" ] && { echo "No username entered."; return 1; }
+  if getent passwd "$newuser" >/dev/null 2>&1; then
+    echo "User '$newuser' already exists."; return 1
+  fi
+
+  # Create the user
+  sudo useradd -m "$newuser" && echo -e "${GREEN}User created: $newuser${NC}" || { echo "Warning: failed to create user: $newuser" >&2; return 1; }
+
+  # Set password
+  read -rp $'Set password now? [Y/n] ' setpw
+  if [ -z "${setpw}" ] || [[ "${setpw}" =~ ^[Yy] ]]; then
+    if command -v openssl >/dev/null 2>&1; then
+      # default to configured password variable if present, else prompt
+      default_pw="${TEMP_PASSWORD:-${PASSWORD:-}}"
   # default to configured password variable if present, else prompt
   default_pw="${PASSWORD:-}"
         if [ -z "${default_pw}" ]; then
