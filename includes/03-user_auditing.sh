@@ -33,7 +33,7 @@ invoke_user_auditing () {
         ua_audit_interactive_remove_unauthorized_sudoers
         UA_COMPLETED[2]=1
         ;;
-              ;;
+      
       3)
         echo -e "${GREEN}[User Auditing] Running: Set passwords for all users${NC}"
         ua_force_temp_passwords
