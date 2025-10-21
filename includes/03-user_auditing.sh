@@ -79,8 +79,8 @@ invoke_user_auditing () {
         ua_remove_non_root_uid0; UA_COMPLETED[4]=1
         ua_set_password_aging_policy; UA_COMPLETED[5]=1
         ua_set_shells_standard_and_root_bash; UA_COMPLETED[6]=1
-@@ -186,11 +186,11 @@ ua_audit_interactive_remove_unauthorized_sudoers () {
-}
+        ua_set_shells_system_accounts_nologin; UA_COMPLETED[7]=1
+
 
 # -------------------------------------------------------------------
 # 3) Set a consistent password for all users
