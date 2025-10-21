@@ -35,7 +35,7 @@ invoke_user_auditing () {
         ;;
       3)
         echo -e "${GREEN}[User Auditing] Running: Set passwords for all users${NC}"
-        ua_set_passwords_for_all
+        ua_force_temp_passwords
         UA_COMPLETED[3]=1
         ;;
       4)
@@ -70,9 +70,9 @@ invoke_user_auditing () {
         ;;
       a|A)
         echo -e "${GREEN}[User Auditing] Running all sections...${NC}"
-  ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
-  ua_audit_interactive_remove_unauthorized_sudoers; UA_COMPLETED[2]=1
-  ua_set_passwords_for_all; UA_COMPLETED[3]=1
+        ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
+        ua_audit_interactive_remove_unauthorized_sudoers; UA_COMPLETED[2]=1
+        ua_force_temp_passwords; UA_COMPLETED[3]=1
         ua_remove_non_root_uid0; UA_COMPLETED[4]=1
         ua_set_password_aging_policy; UA_COMPLETED[5]=1
         ua_set_shells_standard_and_root_bash; UA_COMPLETED[6]=1
@@ -186,11 +186,11 @@ ua_audit_interactive_remove_unauthorized_sudoers () {
 }
 
 # -------------------------------------------------------------------
-# 3) Set a full password for all users
+# 3) Set a consistent password for all users
 # -------------------------------------------------------------------
-ua_set_passwords_for_all () {
-  # Allow override via PASSWORD env var; default to requested value
-  password=${PASSWORD:-1CyberPatriot!}
+ua_force_temp_passwords () {
+  # Allow override via TEMP_PASSWORD or PASSWORD env vars; default to requested value
+  password=${TEMP_PASSWORD:-${PASSWORD:-1CyberPatriot!}}
 
   # Gather all local usernames
   mapfile -t users < <(getent passwd | cut -d: -f1)
@@ -216,13 +216,13 @@ ua_set_passwords_for_all () {
         echo "Set password for: $user"
         continue
       else
-        echo "Warning: failed to set hashed password for: $user; will try plaintext method" >&2
+        echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
       fi
     fi
 
-    # Fallback: set the plain password via chpasswd
+    # Fallback: set the plain password via chpasswd (less preferred)
     if printf '%s:%s\n' "$user" "$password" | sudo chpasswd 2>/dev/null; then
-      echo "Set password for: $user"
+      echo "Set plaintext password for: $user (fallback)"
     else
       echo "Warning: failed to set password for: $user" >&2
     fi
@@ -259,8 +259,8 @@ ua_create_user () {
     read -rp $'Set password now? [Y/n] ' setpw
     if [ -z "${setpw}" ] || [[ "${setpw}" =~ ^[Yy] ]]; then
       if command -v openssl >/dev/null 2>&1; then
-  # default to configured password variable if present, else prompt
-  default_pw="${PASSWORD:-}"
+        # default to configured password variable if present, else prompt
+        default_pw="${TEMP_PASSWORD:-${PASSWORD:-}}"
         if [ -z "${default_pw}" ]; then
           read -srp $'Enter password for new user: ' p1; echo; read -srp $'Confirm password: ' p2; echo
           if [ "$p1" != "$p2" ]; then echo "Passwords do not match."; return 1; fi
