@@ -41,7 +41,34 @@ invoke_user_auditing () {
         UA_COMPLETED[3]=1
         ;;
       4)
-@@ -70,9 +70,9 @@ invoke_user_auditing () {
+        echo -e "${GREEN}[User Auditing] Running: Remove any UID 0 accounts that are not 'root'${NC}"
+        ua_remove_non_root_uid0
+        UA_COMPLETED[4]=1
+        ;;
+      5)
+        echo -e "${GREEN}[User Auditing] Running: Set password aging policy for all users${NC}"
+        ua_set_password_aging_policy
+        UA_COMPLETED[5]=1
+        ;;
+      6)
+        echo -e "${GREEN}[User Auditing] Running: Set shells for standard users and root to /bin/bash${NC}"
+        ua_set_shells_standard_and_root_bash
+        UA_COMPLETED[6]=1
+        ;;
+      7)
+        echo -e "${GREEN}[User Auditing] Running: Set shells for system accounts to /usr/sbin/nologin${NC}"
+        ua_set_shells_system_accounts_nologin
+        UA_COMPLETED[7]=1
+        ;;
+      8)
+        echo -e "${GREEN}[User Auditing] Running: Create a new user${NC}"
+        ua_create_user
+        UA_COMPLETED[8]=1
+        ;;
+      9)
+        echo -e "${GREEN}[User Auditing] Running: Add a user to groups${NC}"
+        ua_add_user_to_groups
+        UA_COMPLETED[9]=1
         ;;
       a|A)
         echo -e "${GREEN}[User Auditing] Running all sections...${NC}"
