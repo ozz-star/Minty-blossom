@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Color support check (Mint sometimes lacks tput colors by default)
-if command -v tput &>/dev/null; then
-  CYAN=$(tput setaf 6)
-  NC=$(tput sgr0)
-else
-  CYAN=""
-  NC=""
-fi
+CYAN="\033[0;36m"
+NC="\033[0m"
 
-invoke_unwanted_software () {
+invoke_unwanted_software() {
   echo -e "${CYAN}[Unwanted Software] Start${NC}"
   us_purge_unwanted_software
   echo -e "${CYAN}[Unwanted Software] Done${NC}"
@@ -19,51 +13,61 @@ invoke_unwanted_software () {
 # -------------------------------------------------------------------
 # Purge unwanted software listed in $UNWANTED_SOFTWARE, then autoremove
 # -------------------------------------------------------------------
-us_purge_unwanted_software () {
+us_purge_unwanted_software() {
   if [ -z "${UNWANTED_SOFTWARE:-}" ]; then
     echo "No unwanted software configured."
     return 0
   fi
 
-  # Iterate over entries; support space-separated string or array-like input
+  sudo apt-get update -qq || true
+
   for name in $UNWANTED_SOFTWARE; do
-    echo "Purging unwanted package: $name..."
+    echo "Processing unwanted package: $name"
 
-    # Avoid matching Mint meta packages (like mint-meta-core)
-    mapfile -t matches < <(
-      dpkg-query -W -f='${Package}\n' 2>/dev/null |
-        grep -E "^${name}([:-].*)?$" |
-        grep -vE '^mint-meta-' || true
-    )
+    # --- APT packages ---
+    mapfile -t matches < <(dpkg-query -W -f='${Package}\n' 2>/dev/null | grep -E "^${name}([:-].*)?$" || true)
 
-    if [ ${#matches[@]} -eq 0 ]; then
-      echo "No installed packages matching $name found; skipping."
-      continue
+    if [ ${#matches[@]} -gt 0 ]; then
+      for pkg in "${matches[@]}"; do
+        echo "Purging APT package: $pkg"
+        if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -y purge "$pkg"; then
+          echo "Repairing dpkg status and retrying..."
+          sudo dpkg --configure -a || true
+          sudo apt-get install -f -y || true
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y purge "$pkg" || \
+            echo "Final failure: could not purge $pkg"
+        fi
+      done
+    else
+      echo "No APT package named $name found."
     fi
 
-    # Purge each matched package name
-    for pkg in "${matches[@]}"; do
-      if sudo DEBIAN_FRONTEND=noninteractive apt -y -qq purge "$pkg" >/dev/null 2>&1; then
-        echo "Purged $pkg"
-      else
-        echo "Warning: purge of $pkg failed; attempting dpkg --configure -a and retry" >&2
-        if sudo dpkg --configure -a >/dev/null 2>&1; then
-          if sudo DEBIAN_FRONTEND=noninteractive apt -y -qq purge "$pkg" >/dev/null 2>&1; then
-            echo "Purged $pkg on retry"
-          else
-            echo "Final failure: could not purge $pkg" >&2
-          fi
-        else
-          echo "Warning: dpkg --configure -a failed; cannot retry purge for $pkg" >&2
-        fi
+    # --- Flatpak packages ---
+    if command -v flatpak >/dev/null 2>&1; then
+      mapfile -t flat_matches < <(flatpak list --app --columns=application 2>/dev/null | grep -i "$name" || true)
+      if [ ${#flat_matches[@]} -gt 0 ]; then
+        for fpkg in "${flat_matches[@]}"; do
+          echo "Removing Flatpak app: $fpkg"
+          flatpak uninstall -y "$fpkg" || echo "Warning: could not remove Flatpak $fpkg"
+        done
       fi
-    done
+    fi
+
+    # --- Snap packages (optional, Mint rarely uses snaps) ---
+    if command -v snap >/dev/null 2>&1; then
+      if snap list 2>/dev/null | grep -q "^$name"; then
+        echo "Removing Snap package: $name"
+        sudo snap remove --purge "$name" || echo "Warning: could not remove snap $name"
+      fi
+    fi
   done
 
-  # Autoremove unneeded packages
-  if sudo apt -y -qq autoremove >/dev/null 2>&1; then
-    echo "Autoremove complete."
-  else
-    echo "Warning: apt autoremove failed; continuing." >&2
-  fi
+  echo "Running autoremove & cleanup..."
+  sudo apt-get -y autoremove
+  sudo apt-get -y autoclean
+  echo "Cleanup complete."
 }
+
+# Example usage:
+# UNWANTED_SOFTWARE="thunderbird hexchat warpinator"
+# invoke_unwanted_software
