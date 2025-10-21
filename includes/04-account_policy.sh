@@ -214,6 +214,8 @@ ap_lockout_faillock () {
     END{
       # We will not print here; insertion handled later by writing to temp file
     }' "$auth_file" > "${auth_file}.tmp.$$"
+  # Use grep -v for portability instead of awk to avoid builtin name collisions.
+  sudo grep -v 'pam_faillock.so' "$auth_file" > "${auth_file}.tmp.$$" || sudo cp -a "$auth_file" "${auth_file}.tmp.$$"
 
   # Insert preauth before first pam_unix.so, then authfail immediately after pam_unix.so
   # If pam_unix.so not found, append at end with a note
@@ -222,35 +224,15 @@ ap_lockout_faillock () {
   inserted_succ=0
 
   # Build a new version of common-auth by reading the temp file and inserting lines
+  # If pam_unix.so not found, append at end. Use awk for controlled insertion but avoid reserved var names.
   awk -v pre="$preauth_line" -v fail="$authfail_line" -v succ="$authsucc_line" '
     BEGIN{ pre_inserted=0; fail_inserted=0 }
     {
-      print $0
-      if (!pre_inserted && $0 ~ /pam_unix.so/) {
-        print pre
-        pre_inserted=1
-      }
-      if (pre_inserted && $0 ~ /pam_unix.so/ && !fail_inserted) {
-        print fail
-        fail_inserted=1
-      }
-    }
-    END{
-      if (!pre_inserted) {
-        print pre
-      }
-      if (!fail_inserted) {
-        print fail
-      }
-      # Always ensure authsucc is present once
-      print succ
-    }' "${auth_file}.tmp.$$" > "${auth_file}.new.$$"
-
-  # Move the new file into place
-  sudo mv "${auth_file}.new.$$" "$auth_file"
+@@ -251,19 +234,16 @@ ap_lockout_faillock () {
   rm -f "${auth_file}.tmp.$$"
 
   # Provide confirmations for common-auth: check if lines present exactly once
+  # Use grep -xF to count exact full-line matches (portable and avoids awk builtin collisions)
   count_line() {
     local line="$1" file="$2"
     sudo awk -v match="$line" '
@@ -258,6 +240,8 @@ ap_lockout_faillock () {
       { if (trim($0)==match) c++ }
       END{ print (c?c:0) }
     ' "$file"
+    # grep exit status may be non-zero when no matches; redirect errors and print integer
+    sudo grep -xF -- "$line" "$file" 2>/dev/null | wc -l || echo 0
   }
 
   c_pre=$(count_line "$preauth_line" "$auth_file")
