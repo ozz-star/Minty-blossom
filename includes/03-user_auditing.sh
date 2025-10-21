@@ -97,13 +97,26 @@ invoke_user_auditing () {
 # 1) Interactive audit of local users with valid login shells
 # -------------------------------------------------------------------
 ua_audit_interactive_remove_unauthorized_users () {
-  # Gather all local usernames (includes system/hidden accounts)
-  mapfile -t users < <(getent passwd | cut -d: -f1)
+  # Build list of valid shells from /etc/shells (ignore comments and blank lines)
+  mapfile -t valid_shells < <(grep -E -v '^\s*#|^\s*$' /etc/shells || true)
 
-  if [ ${#users[@]} -eq 0 ]; then
-    echo "No users found."
+  if [ ${#valid_shells[@]} -eq 0 ]; then
+    echo "No valid shells found in /etc/shells."
     return 0
   fi
+
+  # Create a lookup for valid shells
+  declare -A shell_map
+  for s in "${valid_shells[@]}"; do
+    shell_map["$s"]=1
+  done
+
+  # Collect usernames whose shell is in the valid list
+  mapfile -t users < <(getent passwd | while IFS=: read -r user _ uid gid gecos home shell; do
+    if [ -n "${shell_map[$shell]:-}" ]; then
+      printf '%s\n' "$user"
+    fi
+  done)
 
   for user in "${users[@]}"; do
     [ -z "${user}" ] && continue
