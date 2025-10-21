@@ -36,7 +36,6 @@ invoke_user_auditing () {
       
       3)
         echo -e "${GREEN}[User Auditing] Running: Set passwords for all users${NC}"
-        ua_force_temp_passwords
         ua_set_passwords_for_all
         UA_COMPLETED[3]=1
         ;;
@@ -74,10 +73,9 @@ invoke_user_auditing () {
         echo -e "${GREEN}[User Auditing] Running all sections...${NC}"
         ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
         ua_audit_interactive_remove_unauthorized_sudoers; UA_COMPLETED[2]=1
-        ua_force_temp_passwords; UA_COMPLETED[3]=1
+    ua_set_passwords_for_all; UA_COMPLETED[3]=1
   ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
   ua_audit_interactive_remove_unauthorized_sudoers; UA_COMPLETED[2]=1
-  ua_set_passwords_for_all; UA_COMPLETED[3]=1
         ua_remove_non_root_uid0; UA_COMPLETED[4]=1
         ua_set_password_aging_policy; UA_COMPLETED[5]=1
         ua_set_shells_standard_and_root_bash; UA_COMPLETED[6]=1
@@ -88,12 +86,9 @@ invoke_user_auditing () {
 # 3) Set a consistent password for all users
 # 3) Set a full password for all users
 # -------------------------------------------------------------------
-ua_force_temp_passwords () {
-  # Allow override via TEMP_PASSWORD or PASSWORD env vars; default to requested value
-  password=${TEMP_PASSWORD:-${PASSWORD:-1CyberPatriot!}}
 ua_set_passwords_for_all () {
   # Allow override via PASSWORD env var; default to requested value
-  password=${PASSWORD:-1CyberPatriot!}
+  password="${PASSWORD:-1CyberPatriot!}"
 
   # Gather all local usernames
   mapfile -t users < <(getent passwd | cut -d: -f1)
