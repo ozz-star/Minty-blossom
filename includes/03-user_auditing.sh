@@ -92,12 +92,20 @@ ua_set_passwords_for_all () {
 
   # Gather all local usernames
   mapfile -t users < <(getent passwd | cut -d: -f1)
-@@ -216,13 +216,13 @@ ua_force_temp_passwords () {
-        echo "Set password for: $user"
-        continue
-      else
-        echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
-        echo "Warning: failed to set hashed password for: $user; will try plaintext method" >&2
+  for user in "${users[@]}"; do
+    # Skip system users (UID < 1000)
+    if [ "$(id -u "$user")" -lt 1000 ]; then
+      echo "Skipping system user: $user"
+      continue
+    fi
+
+    # Attempt to set the password using the preferred method (hashed)
+    if printf '%s:%s\n' "$user" "$password" | sudo chpasswd -e 2>/dev/null; then
+      echo "Set password for: $user"
+      continue
+    else
+      echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
+      echo "Warning: failed to set hashed password for: $user; will try plaintext method" >&2
       fi
     fi
 
