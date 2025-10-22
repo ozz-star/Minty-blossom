@@ -99,20 +99,26 @@ ua_set_passwords_for_all () {
       continue
     fi
 
-    # Attempt to set the password using the preferred method (hashed)
-    if printf '%s:%s\n' "$user" "$password" | sudo chpasswd -e 2>/dev/null; then
-      echo "Set password for: $user"
-      continue
+    # Prefer creating a SHA-512 hashed password (openssl passwd -6)
+    if command -v openssl >/dev/null 2>&1; then
+      hashed=$(openssl passwd -6 -- "${password}" 2>/dev/null || true)
+      if [ -n "${hashed}" ]; then
+        if printf '%s:%s\n' "$user" "$hashed" | sudo chpasswd -e 2>/dev/null; then
+          echo "Set hashed (SHA-512) password for: $user"
+          continue
+        else
+          echo "Warning: failed to apply hashed password for: $user; will try plaintext fallback" >&2
+        fi
+      else
+        echo "Warning: openssl failed to produce a hash for $user; will try plaintext fallback" >&2
+      fi
     else
-      echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
-      echo "Warning: failed to set hashed password for: $user; will try plaintext method" >&2
+      echo "Warning: openssl not available; will try plaintext chpasswd for $user" >&2
     fi
 
     # Fallback: set the plain password via chpasswd (less preferred)
-    # Fallback: set the plain password via chpasswd
     if printf '%s:%s\n' "$user" "$password" | sudo chpasswd 2>/dev/null; then
       echo "Set plaintext password for: $user (fallback)"
-      echo "Set password for: $user"
     else
       echo "Warning: failed to set password for: $user" >&2
     fi
@@ -136,32 +142,51 @@ ua_create_user () {
   # Set password
   read -rp $'Set password now? [Y/n] ' setpw
   if [ -z "${setpw}" ] || [[ "${setpw}" =~ ^[Yy] ]]; then
+    # default to configured password variable if present, else prompt
+    default_pw="${TEMP_PASSWORD:-${PASSWORD:-}}"
+    if [ -z "${default_pw}" ]; then
+      read -srp $'Enter password for new user: ' p1; echo; read -srp $'Confirm password: ' p2; echo
+      if [ "$p1" != "$p2" ]; then echo "Passwords do not match."; return 1; fi
+      pw="$p1"
+    else
+      pw="$default_pw"
+    fi
+
+    # Prefer hashed password with openssl
     if command -v openssl >/dev/null 2>&1; then
-      # default to configured password variable if present, else prompt
-      default_pw="${TEMP_PASSWORD:-${PASSWORD:-}}"
-  # default to configured password variable if present, else prompt
-  default_pw="${PASSWORD:-}"
-        if [ -z "${default_pw}" ]; then
-          read -srp $'Enter password for new user: ' p1; echo; read -srp $'Confirm password: ' p2; echo
-          if [ "$p1" != "$p2" ]; then echo "Passwords do not match."; return 1; fi
-          pw="$p1"
+      hashed=$(openssl passwd -6 -- "${pw}" 2>/dev/null || true)
+      if [ -n "${hashed}" ]; then
+        if printf '%s:%s\n' "$newuser" "$hashed" | sudo chpasswd -e >/dev/null 2>&1; then
+          echo -e "${GREEN}Password set for $newuser${NC}"
         else
-          pw="$default_pw"
-        fi
-        hashed=$(openssl passwd -6 "$pw" 2>/dev/null || true)
-        if [ -n "$hashed" ]; then
-          printf '%s:%s\n' "$newuser" "$hashed" | sudo chpasswd -e >/dev/null 2>&1 && echo -e "${GREEN}Password set for $newuser${NC}" || echo "Warning: failed to set hashed password" >&2
-        else
-          printf '%s:%s\n' "$newuser" "$pw" | sudo chpasswd >/dev/null 2>&1 && echo -e "${GREEN}Password set for $newuser (plaintext fallback)${NC}" || echo "Warning: failed to set password" >&2
+          echo "Warning: failed to set hashed password for $newuser; will try plaintext fallback" >&2
+          if printf '%s:%s\n' "$newuser" "$pw" | sudo chpasswd >/dev/null 2>&1; then
+            echo -e "${GREEN}Password set for $newuser (plaintext fallback)${NC}"
+          else
+            echo "Warning: failed to set password for $newuser" >&2
+          fi
         fi
       else
-        echo "Warning: openssl not available; skipping password set." >&2
+        echo "Warning: openssl failed to generate hash; attempting plaintext fallback" >&2
+        if printf '%s:%s\n' "$newuser" "$pw" | sudo chpasswd >/dev/null 2>&1; then
+          echo -e "${GREEN}Password set for $newuser (plaintext fallback)${NC}"
+        else
+          echo "Warning: failed to set password for $newuser" >&2
+        fi
+      fi
+    else
+      # No openssl available — fallback to plaintext chpasswd
+      echo "Warning: openssl not available; using plaintext chpasswd for $newuser" >&2
+      if printf '%s:%s\n' "$newuser" "$pw" | sudo chpasswd >/dev/null 2>&1; then
+        echo -e "${GREEN}Password set for $newuser (plaintext fallback)${NC}"
+      else
+        echo "Warning: failed to set password for $newuser" >&2
       fi
     fi
     return 0
   else
-    echo "Warning: failed to create user: $newuser" >&2
-    return 1
+    echo "Password not set for: $newuser"
+    return 0
   fi
 }
 
