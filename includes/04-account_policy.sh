@@ -87,7 +87,14 @@ ap_secure_login_defs () {
   set_directive PASS_MIN_DAYS 10
   set_directive PASS_WARN_AGE 14
   set_directive UMASK 077
+  # Ensure a secure password hashing algorithm is configured
+  # ENCRYPT_METHOD controls the hash used for new passwords (SHA512 is recommended)
+  set_directive ENCRYPT_METHOD SHA512
+  # Optionally set SHA rounds (if supported) for additional work factor
+  set_directive SHA_CRYPT_MIN_ROUNDS 1000
 
+  # Ensure PAM configuration uses sha512 for pam_unix.so (common-password/system-auth)
+  ap_ensure_password_hashing
   return 0
 }
 
@@ -313,6 +320,41 @@ ap_disallow_blank_passwords () {
   else
     echo "Warning: $sshf not found; cannot enforce PermitEmptyPasswords." >&2
   fi
+
+  return 0
+}
+
+
+# -------------------------------------------------------------------
+# Ensure PAM uses a secure hashing algorithm (sha512) for pam_unix.so
+# -------------------------------------------------------------------
+ap_ensure_password_hashing () {
+  ts=$(date +%Y%m%d%H%M%S)
+  files=(/etc/pam.d/common-password /etc/pam.d/system-auth /etc/pam.d/password-auth)
+
+  for f in "${files[@]}"; do
+    if [ ! -f "$f" ]; then
+      # skip missing PAM files silently
+      continue
+    fi
+    sudo cp -a "$f" "${f}.bak.${ts}"
+    echo "Backup created: ${f}.bak.${ts}"
+
+    # For lines that contain pam_unix.so, ensure the token sha512 is present
+    # Preserve existing options and only add sha512 if missing
+    sudo awk 'BEGIN{OFS=FS=""} /pam_unix.so/ {
+        line=$0
+        if (line !~ /sha512/) {
+          # append sha512 to the end of the line
+          sub(/[[:space:]]*$/, " sha512", line)
+        }
+        print line
+        next
+      } { print $0 }' "$f" > "${f}.tmp.$$" || sudo cp -a "$f" "${f}.tmp.$$"
+
+    sudo mv "${f}.tmp.$$" "$f"
+    echo "Ensured sha512 token on pam_unix.so lines in $f"
+  done
 
   return 0
 }
