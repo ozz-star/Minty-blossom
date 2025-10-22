@@ -11,7 +11,6 @@ invoke_account_policy () {
     if [ "${AP_COMPLETED[3]:-0}" = "1" ]; then printf "%b3) Configure /etc/security/pwquality.conf%b\n" "$GREEN" "$NC"; else printf "3) Configure /etc/security/pwquality.conf\n"; fi
     if [ "${AP_COMPLETED[4]:-0}" = "1" ]; then printf "%b4) Configure pam_faillock (lockout)%b\n" "$GREEN" "$NC"; else printf "4) Configure pam_faillock (lockout)\n"; fi
     if [ "${AP_COMPLETED[5]:-0}" = "1" ]; then printf "%b5) Disallow blank passwords (PAM/SSH)%b\n" "$GREEN" "$NC"; else printf "5) Disallow blank passwords (PAM/SSH)\n"; fi
-  if [ "${AP_COMPLETED[6]:-0}" = "1" ]; then printf "%b6) Enforce SHA-512 password hashing and rounds%b\n" "$GREEN" "$NC"; else printf "6) Enforce SHA-512 password hashing and rounds\n"; fi
     printf "a) Run ALL of the above in sequence\n"
     printf "b) Back to main menu\n"
 
@@ -37,10 +36,6 @@ invoke_account_policy () {
         echo -e "${GREEN}[Account Policy] Running: Disallow blank passwords (PAM/SSH)${NC}"
         ap_disallow_blank_passwords; AP_COMPLETED[5]=1
         ;;
-      6)
-        echo -e "${GREEN}[Account Policy] Running: Enforce SHA-512 password hashing and rounds${NC}"
-        ap_set_password_hashing; AP_COMPLETED[6]=1
-        ;;
       a|A)
         echo -e "${GREEN}[Account Policy] Running all sections...${NC}"
         ap_secure_login_defs; AP_COMPLETED[1]=1
@@ -48,7 +43,6 @@ invoke_account_policy () {
         ap_pwquality_conf_file; AP_COMPLETED[3]=1
         ap_lockout_faillock; AP_COMPLETED[4]=1
         ap_disallow_blank_passwords; AP_COMPLETED[5]=1
-  ap_set_password_hashing; AP_COMPLETED[6]=1
         echo -e "${GREEN}[Account Policy] Completed all sections.${NC}"
         ;;
       b|B|q|Q)
@@ -206,46 +200,43 @@ ap_lockout_faillock () {
 
   # Ensure lines exist exactly once in common-auth
   # Remove any existing pam_faillock lines to avoid duplicates, but keep a copy in the backup
-  sudo awk -v pre="$preauth_line" -v fail="$authfail_line" -v succ="$authsucc_line" \
-    'BEGIN{found_pre=0; found_fail=0; found_succ=0}
-    {
-      # normalize tabs to spaces for matching
-      line=$0
-      if (line ~ /pam_faillock.so/) {
-        # skip existing pam_faillock lines (we will reinsert exactly once later)
-        next
-      }
-      print $0
-    }
-    END{
-      # We will not print here; insertion handled later by writing to temp file
-    }' "$auth_file" > "${auth_file}.tmp.$$"
   # Use grep -v for portability instead of awk to avoid builtin name collisions.
   sudo grep -v 'pam_faillock.so' "$auth_file" > "${auth_file}.tmp.$$" || sudo cp -a "$auth_file" "${auth_file}.tmp.$$"
 
   # Insert preauth before first pam_unix.so, then authfail immediately after pam_unix.so
-  # If pam_unix.so not found, append at end with a note
-  inserted_pre=0
-  inserted_fail=0
-  inserted_succ=0
-
-  # Build a new version of common-auth by reading the temp file and inserting lines
   # If pam_unix.so not found, append at end. Use awk for controlled insertion but avoid reserved var names.
   awk -v pre="$preauth_line" -v fail="$authfail_line" -v succ="$authsucc_line" '
     BEGIN{ pre_inserted=0; fail_inserted=0 }
     {
-@@ -251,19 +234,16 @@ ap_lockout_faillock () {
+      print $0
+      if (!pre_inserted && $0 ~ /pam_unix.so/) {
+        print pre
+        pre_inserted=1
+      }
+      if (pre_inserted && $0 ~ /pam_unix.so/ && !fail_inserted) {
+        print fail
+        fail_inserted=1
+      }
+    }
+    END{
+      if (!pre_inserted) {
+        print pre
+      }
+      if (!fail_inserted) {
+        print fail
+      }
+      # Always ensure authsucc is present once
+      print succ
+    }' "${auth_file}.tmp.$$" > "${auth_file}.new.$$"
+
+  # Move the new file into place
+  sudo mv "${auth_file}.new.$$" "$auth_file"
   rm -f "${auth_file}.tmp.$$"
 
   # Provide confirmations for common-auth: check if lines present exactly once
   # Use grep -xF to count exact full-line matches (portable and avoids awk builtin collisions)
   count_line() {
     local line="$1" file="$2"
-    sudo awk -v match="$line" '
-      function trim(s){ gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-      { if (trim($0)==match) c++ }
-      END{ print (c?c:0) }
-    ' "$file"
     # grep exit status may be non-zero when no matches; redirect errors and print integer
     sudo grep -xF -- "$line" "$file" 2>/dev/null | wc -l || echo 0
   }
@@ -323,57 +314,5 @@ ap_disallow_blank_passwords () {
     echo "Warning: $sshf not found; cannot enforce PermitEmptyPasswords." >&2
   fi
 
-  return 0
-}
-
-
-# -------------------------------------------------------------------
-# Enforce SHA-512 password hashing and rounds
-# -------------------------------------------------------------------
-ap_set_password_hashing () {
-  ts=$(date +%Y%m%d%H%M%S)
-
-  # Set SHA-512 in /etc/login.defs via ENCRYPT_METHOD
-  login_defs=/etc/login.defs
-  if [ -f "$login_defs" ]; then
-    sudo cp -a "$login_defs" "${login_defs}.bak.${ts}"
-    echo "Backup created: ${login_defs}.bak.${ts}"
-    # Use ENCRYPT_METHOD SHA512
-    if sudo grep -Eq "^\s*#?\s*ENCRYPT_METHOD\b" "$login_defs"; then
-      sudo sed -ri "s|^\s*#?\s*(ENCRYPT_METHOD)\b.*|ENCRYPT_METHOD SHA512|g" "$login_defs"
-      echo "Set ENCRYPT_METHOD to SHA512 in $login_defs"
-    else
-      echo "ENCRYPT_METHOD SHA512" | sudo tee -a "$login_defs" > /dev/null
-      echo "Appended ENCRYPT_METHOD SHA512 to $login_defs"
-    fi
-  else
-    echo "Warning: $login_defs not found; skipping login.defs update." >&2
-  fi
-
-  # Set rounds and SHA-512 in PAM common-password
-  pam_common_pass=/etc/pam.d/common-password
-  if [ -f "$pam_common_pass" ]; then
-    sudo cp -a "$pam_common_pass" "${pam_common_pass}.bak.${ts}"
-    echo "Backup created: ${pam_common_pass}.bak.${ts}"
-
-    # We want a pam_unix.so line that uses sha512 and rounds=5000 (common default)
-    # Find existing pam_unix.so line and replace/add options
-    # Use portable sed: remove any 'sha512' and 'rounds=' occurrences and then add them
-    sudo sed -ri 's/(pam_unix\.so[^\n]*)/\1/g' "$pam_common_pass"
-
-    # If there is a pam_unix.so line, ensure it contains sha512 and rounds=5000
-    if sudo grep -q "pam_unix.so" "$pam_common_pass"; then
-      sudo sed -ri "s|pam_unix.so(.*)|pam_unix.so\1 sha512 rounds=5000|g" "$pam_common_pass"
-      echo "Updated pam_unix.so in $pam_common_pass to include sha512 rounds=5000"
-    else
-      # Append a standard password line if none exists
-      echo "password [success=1 default=ignore] pam_unix.so sha512 rounds=5000" | sudo tee -a "$pam_common_pass" > /dev/null
-      echo "Appended pam_unix.so sha512 rounds=5000 to $pam_common_pass"
-    fi
-  else
-    echo "Warning: $pam_common_pass not found; skipping PAM password hashing updates." >&2
-  fi
-
-  echo "Password hashing policy applied (SHA-512, rounds=5000)."
   return 0
 }
