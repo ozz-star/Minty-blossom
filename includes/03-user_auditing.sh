@@ -248,29 +248,40 @@ ua_create_user () {
     home_flag="-M"
   fi
 
-  # Create the user
-  sudo useradd -m "$newuser" && echo -e "${GREEN}User created: $newuser${NC}" || { echo "Warning: failed to create user: $newuser" >&2; return 1; }
+  # Create the user (use provided home_flag and GECOS if present)
+  if sudo useradd ${home_flag} -c "${gecos}" "$newuser" >/dev/null 2>&1; then
+    echo -e "${GREEN}User created: $newuser${NC}"
+  else
+    echo "Warning: failed to create user: $newuser" >&2
+    return 1
+  fi
 
   # Set password
   read -rp $'Set password now? [Y/n] ' setpw
   if [ -z "${setpw}" ] || [[ "${setpw}" =~ ^[Yy] ]]; then
+    # default to configured password variable if present, else prompt
+    default_pw="${TEMP_PASSWORD:-${PASSWORD:-}}"
+    if [ -z "${default_pw}" ]; then
+      read -srp $'Enter password for new user: ' p1; echo; read -srp $'Confirm password: ' p2; echo
+      if [ "$p1" != "$p2" ]; then echo "Passwords do not match."; return 1; fi
+      pw="$p1"
+    else
+      pw="$default_pw"
+    fi
+
+    # Prefer hashed password with openssl
     if command -v openssl >/dev/null 2>&1; then
-      # default to configured password variable if present, else prompt
-      default_pw="${TEMP_PASSWORD:-${PASSWORD:-}}"
-  # default to configured password variable if present, else prompt
-  default_pw="${PASSWORD:-}"
-        if [ -z "${default_pw}" ]; then
-          read -srp $'Enter password for new user: ' p1; echo; read -srp $'Confirm password: ' p2; echo
-          if [ "$p1" != "$p2" ]; then echo "Passwords do not match."; return 1; fi
-          pw="$p1"
+      hashed=$(openssl passwd -6 -- "${pw}" 2>/dev/null || true)
+      if [ -n "${hashed}" ]; then
+        if printf '%s:%s\n' "$newuser" "$hashed" | sudo chpasswd -e >/dev/null 2>&1; then
+          echo -e "${GREEN}Password set for $newuser${NC}"
         else
-          pw="$default_pw"
-        fi
-        hashed=$(openssl passwd -6 "$pw" 2>/dev/null || true)
-        if [ -n "$hashed" ]; then
-          printf '%s:%s\n' "$newuser" "$hashed" | sudo chpasswd -e >/dev/null 2>&1 && echo -e "${GREEN}Password set for $newuser${NC}" || echo "Warning: failed to set hashed password" >&2
-        else
-          printf '%s:%s\n' "$newuser" "$pw" | sudo chpasswd >/dev/null 2>&1 && echo -e "${GREEN}Password set for $newuser (plaintext fallback)${NC}" || echo "Warning: failed to set password" >&2
+          echo "Warning: failed to set hashed password for $newuser; will try plaintext fallback" >&2
+          if printf '%s:%s\n' "$newuser" "$pw" | sudo chpasswd >/dev/null 2>&1; then
+            echo -e "${GREEN}Password set for $newuser (plaintext fallback)${NC}"
+          else
+            echo "Warning: failed to set password for $newuser" >&2
+          fi
         fi
       else
         echo "Warning: openssl failed to generate hash; attempting plaintext fallback" >&2
@@ -289,11 +300,11 @@ ua_create_user () {
         echo "Warning: failed to set password for $newuser" >&2
       fi
     fi
-    return 0
   else
     echo "Password not set for: $newuser"
-    return 0
   fi
+
+  return 0
 }
 
 
