@@ -8,15 +8,13 @@ invoke_prohibited_files () {
   echo "Select prohibited file category to remove:" 
   echo "1) MP3 files (.mp3)"
   echo "2) OGG files (.ogg)"
-  echo "3) Plain text files (.txt .text .md .log)"
-  echo "4) ALL of the above"
+  echo "3) BOTH MP3 and OGG"
   echo "q) Quit"
   read -rp $'Enter choice: ' choice
   case "$choice" in
     1) FILE_EXTENSIONS="mp3";;
     2) FILE_EXTENSIONS="ogg";;
-    3) FILE_EXTENSIONS="txt text md log";;
-    4) FILE_EXTENSIONS="mp3 ogg txt text md log";;
+    3) FILE_EXTENSIONS="mp3 ogg";;
     q|Q) echo "Skipping prohibited files removal."; return 0;;
     *) echo "Invalid choice"; return 1;;
   esac
