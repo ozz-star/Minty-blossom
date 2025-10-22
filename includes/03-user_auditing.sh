@@ -443,6 +443,15 @@ ua_set_shells_system_accounts_nologin () {
 
   return 0
 }
+
+# -------------------------------------------------------------------
+# 8) Add users to specified groups
+# -------------------------------------------------------------------
+ua_add_users_to_groups () {
+  local tgt_user="$1"
+  local groups="$2"
+
+  # Iterate groups, trim whitespace, and attempt to add
   IFS=',' read -r -a garr <<< "$groups"
   for g in "${garr[@]}"; do
     g=$(printf '%s' "$g" | xargs)
