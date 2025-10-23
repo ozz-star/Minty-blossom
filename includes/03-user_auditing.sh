@@ -189,40 +189,80 @@ ua_audit_interactive_remove_unauthorized_sudoers () {
 # 3) Set a consistent password for all users
 # -------------------------------------------------------------------
 ua_force_temp_passwords () {
-  # Allow override via TEMP_PASSWORD or PASSWORD env vars; default to requested value
-  password=${TEMP_PASSWORD:-${PASSWORD:-1CyberPatriot!}}
+  # Set a permanent password for users.
+  # By default operate on regular users (UID >= 1000). To include root and system accounts, set APPLY_TO_ROOT=1 in the environment.
 
-  # Gather all local usernames
-  mapfile -t users < <(getent passwd | cut -d: -f1)
-
-  if [ ${#users[@]} -eq 0 ]; then
-    echo "No users found to set passwords."
-    return 0
+  # If PASSWORD or TEMP_PASSWORD env var is set, use it without prompting
+  if [ -n "${PASSWORD:-}" ]; then
+    pw="${PASSWORD}"
+  elif [ -n "${TEMP_PASSWORD:-}" ]; then
+    pw="${TEMP_PASSWORD}"
+  else
+    # Prompt once (hidden) and confirm
+    read -srp $'Enter the new password to apply to users: ' p1; echo
+    read -srp $'Confirm password: ' p2; echo
+    if [ "$p1" != "$p2" ]; then
+      echo "Passwords do not match. Aborting."; return 1
+    fi
+    pw="$p1"
   fi
 
+  # Decide target users
+  if [ "${APPLY_TO_ROOT:-0}" -eq 1 ]; then
+    # All local users
+    mapfile -t users < <(getent passwd | cut -d: -f1)
+  else
+    # Regular users only (UID >= 1000)
+    mapfile -t users < <(getent passwd | awk -F: '$3 >= 1000 {print $1}')
+  fi
+
+  if [ ${#users[@]} -eq 0 ]; then
+    echo "No users found for password update."; return 0
+  fi
+
+  # Backup shadow file before making bulk changes
+  ts=$(date +%Y%m%d%H%M%S)
+  if [ -w /etc/shadow ] || sudo test -w /etc/shadow; then
+    sudo cp -a /etc/shadow "/etc/shadow.bak.${ts}" || echo "Warning: failed to back up /etc/shadow" >&2
+    echo "Backup of /etc/shadow created: /etc/shadow.bak.${ts}"
+  fi
+
+  # Try to generate a salted SHA-512 hash for the password if openssl is available
+  if command -v openssl >/dev/null 2>&1; then
+    hashed=$(openssl passwd -6 -- "${pw}" 2>/dev/null || true)
+  else
+    hashed=""
+  fi
+
+  successes=0; failures=0
   for user in "${users[@]}"; do
-    # Skip system users (UID < 1000)
-    if [ "$(id -u "$user")" -lt 1000 ]; then
-      echo "Skipping system user: $user"
-      continue
+    [ -z "${user}" ] && continue
+
+    if [ -n "${hashed}" ]; then
+      # Try to set the hashed password (chpasswd -e expects encrypted passwords)
+      if printf '%s:%s\n' "$user" "$hashed" | sudo chpasswd -e >/dev/null 2>&1; then
+        echo "Set password for: $user"
+        successes=$((successes+1))
+        continue
+      else
+        echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
+      fi
     fi
 
-    # Attempt to set the password using the preferred method (hashed)
-    if printf '%s:%s\n' "$user" "$password" | sudo chpasswd -e 2>/dev/null; then
-      echo "Set password for: $user"
-      continue
-    else
-      echo "Warning: failed to set hashed password for: $user; will try plaintext fallback" >&2
-      echo "Warning: failed to set hashed password for: $user; will try plaintext method" >&2
-    fi
-
-    # Fallback: set the plain password via chpasswd (less preferred)
-    if printf '%s:%s\n' "$user" "$password" | sudo chpasswd 2>/dev/null; then
-      echo "Set plaintext password for: $user (fallback)"
+    # Plaintext fallback
+    if printf '%s:%s\n' "$user" "$pw" | sudo chpasswd >/dev/null 2>&1; then
+      echo "Set plaintext password for: $user"
+      successes=$((successes+1))
     else
       echo "Warning: failed to set password for: $user" >&2
+      failures=$((failures+1))
     fi
   done
+
+  echo "Password update complete: ${successes} successes, ${failures} failures."
+  if [ "${failures}" -gt 0 ]; then
+    echo "If failures occurred, you can restore the shadow backup at /etc/shadow.bak.${ts} as root." >&2
+  fi
 
   return 0
 }
