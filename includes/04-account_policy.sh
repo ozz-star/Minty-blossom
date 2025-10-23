@@ -103,29 +103,11 @@ ap_secure_login_defs () {
 # -------------------------------------------------------------------
 ap_pam_pwquality_inline () {
   local target="/etc/pam.d/common-password"
+  local line_to_add="password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
 
   if [ ! -f "$target" ]; then
     echo "Warning: $target not found. Skipping pwquality rule." >&2
     return 1
-  fi
-
-  # detect available module: prefer pam_pwquality, else pam_cracklib
-  mod=""
-  if [ -e /lib/security/pam_pwquality.so ] || [ -e /lib64/security/pam_pwquality.so ] || [ -e /usr/lib/security/pam_pwquality.so ] || [ -e /lib/x86_64-linux-gnu/security/pam_pwquality.so ]; then
-    mod="pam_pwquality.so"
-  elif [ -e /lib/security/pam_cracklib.so ] || [ -e /lib64/security/pam_cracklib.so ] || [ -e /usr/lib/security/pam_cracklib.so ] || [ -e /lib/x86_64-linux-gnu/security/pam_cracklib.so ]; then
-    mod="pam_cracklib.so"
-  else
-    echo "Warning: neither pam_pwquality nor pam_cracklib modules found on this system; skipping password quality insertion." >&2
-    return 1
-  fi
-
-  # Build the appropriate line depending on module
-  if [ "$mod" = "pam_pwquality.so" ]; then
-    line_to_add="password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
-  else
-    # pam_cracklib has slightly different semantics but these options are commonly supported
-    line_to_add="password requisite pam_cracklib.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
   fi
 
   # Create a timestamped backup
@@ -133,12 +115,26 @@ ap_pam_pwquality_inline () {
   ts=$(date +%Y%m%d%H%M%S)
   sudo cp -a "$target" "${target}.bak.${ts}"
 
-  # Idempotent: remove any existing lines referencing pam_pwquality or pam_cracklib
-  sudo sed -i '/pam_pwquality.so/d;/pam_cracklib.so/d' "$target"
+  # Check if the exact line already exists (ignoring leading/trailing whitespace)
+  if sudo grep -q -x "[[:space:]]*${line_to_add}[[:space:]]*" "$target"; then
+    echo "Password quality rule already in place in $target."
+    return 0
+  fi
+
+  # If not, remove any other pam_pwquality.so lines to ensure idempotency
+  sudo sed -i '/pam_pwquality.so/d' "$target"
 
   # Insert the desired line before the first occurrence of pam_unix.so
-  if sudo grep -q 'pam_unix.so' "$target"; then
-    sudo sed -i '/pam_unix.so/i '
+  # The `i\` command in sed inserts the text before the matched line.
+  if sudo sed -i '/pam_unix.so/i '"$line_to_add" "$target"; then
+    echo "Inserted password quality rule into $target."
+  else
+    echo "Warning: Failed to insert password quality rule into $target." >&2
+    return 1
+  fi
+
+  return 0
+}
 
 # -------------------------------------------------------------------
 # Configure /etc/security/pwquality.conf
