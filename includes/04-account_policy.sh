@@ -1,6 +1,61 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+invoke_account_policy () {
+  # Interactive submenu for account policy sections
+  declare -A AP_COMPLETED=()
+  while true; do
+    echo -e "${CYAN}\n[Account Policy] Menu${NC}"
+    if [ "${AP_COMPLETED[1]:-0}" = "1" ]; then printf "%b1) /etc/login.defs hardening%b\n" "$GREEN" "$NC"; else printf "1) /etc/login.defs hardening\n"; fi
+    if [ "${AP_COMPLETED[2]:-0}" = "1" ]; then printf "%b2) Insert pam_pwquality into common-password%b\n" "$GREEN" "$NC"; else printf "2) Insert pam_pwquality into common-password\n"; fi
+    if [ "${AP_COMPLETED[3]:-0}" = "1" ]; then printf "%b3) Configure /etc/security/pwquality.conf%b\n" "$GREEN" "$NC"; else printf "3) Configure /etc/security/pwquality.conf\n"; fi
+    if [ "${AP_COMPLETED[4]:-0}" = "1" ]; then printf "%b4) Configure pam_faillock (lockout)%b\n" "$GREEN" "$NC"; else printf "4) Configure pam_faillock (lockout)\n"; fi
+    if [ "${AP_COMPLETED[5]:-0}" = "1" ]; then printf "%b5) Disallow blank passwords (PAM/SSH)%b\n" "$GREEN" "$NC"; else printf "5) Disallow blank passwords (PAM/SSH)\n"; fi
+    printf "a) Run ALL of the above in sequence\n"
+    printf "b) Back to main menu\n"
+
+    read -rp $'Enter choice: ' choice
+    case "$choice" in
+      1)
+        echo -e "${GREEN}[Account Policy] Running: /etc/login.defs hardening${NC}"
+        ap_secure_login_defs; AP_COMPLETED[1]=1
+        ;;
+      2)
+        echo -e "${GREEN}[Account Policy] Running: Insert pam_pwquality into common-password${NC}"
+        ap_pam_pwquality_inline; AP_COMPLETED[2]=1
+        ;;
+      3)
+        echo -e "${GREEN}[Account Policy] Running: Configure /etc/security/pwquality.conf${NC}"
+        ap_pwquality_conf_file; AP_COMPLETED[3]=1
+        ;;
+      4)
+        echo -e "${GREEN}[Account Policy] Running: Configure pam_faillock (lockout)${NC}"
+        ap_lockout_faillock; AP_COMPLETED[4]=1
+        ;;
+      5)
+        echo -e "${GREEN}[Account Policy] Running: Disallow blank passwords (PAM/SSH)${NC}"
+        ap_disallow_blank_passwords; AP_COMPLETED[5]=1
+        ;;
+      a|A)
+        echo -e "${GREEN}[Account Policy] Running all sections...${NC}"
+        ap_secure_login_defs; AP_COMPLETED[1]=1
+        ap_pam_pwquality_inline; AP_COMPLETED[2]=1
+        ap_pwquality_conf_file; AP_COMPLETED[3]=1
+        ap_lockout_faillock; AP_COMPLETED[4]=1
+        ap_disallow_blank_passwords; AP_COMPLETED[5]=1
+        echo -e "${GREEN}[Account Policy] Completed all sections.${NC}"
+        ;;
+      b|B|q|Q)
+        echo -e "${CYAN}[Account Policy] Returning to main menu.${NC}"
+        break
+        ;;
+      *)
+        echo -e "${C_RED}Invalid option${C_RESET}"
+        ;;
+    esac
+  done
+}
+
 ap_pam_pwquality_inline () {
   local target="/etc/pam.d/common-password"
 
