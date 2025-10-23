@@ -1,59 +1,54 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-invoke_account_policy () {
-  # Interactive submenu for account policy sections
-  declare -A AP_COMPLETED=()
-  while true; do
-    echo -e "${CYAN}\n[Account Policy] Menu${NC}"
-    if [ "${AP_COMPLETED[1]:-0}" = "1" ]; then printf "%b1) /etc/login.defs hardening%b\n" "$GREEN" "$NC"; else printf "1) /etc/login.defs hardening\n"; fi
-    if [ "${AP_COMPLETED[2]:-0}" = "1" ]; then printf "%b2) Insert pam_pwquality into common-password%b\n" "$GREEN" "$NC"; else printf "2) Insert pam_pwquality into common-password\n"; fi
-    if [ "${AP_COMPLETED[3]:-0}" = "1" ]; then printf "%b3) Configure /etc/security/pwquality.conf%b\n" "$GREEN" "$NC"; else printf "3) Configure /etc/security/pwquality.conf\n"; fi
-    if [ "${AP_COMPLETED[4]:-0}" = "1" ]; then printf "%b4) Configure pam_faillock (lockout)%b\n" "$GREEN" "$NC"; else printf "4) Configure pam_faillock (lockout)\n"; fi
-    if [ "${AP_COMPLETED[5]:-0}" = "1" ]; then printf "%b5) Disallow blank passwords (PAM/SSH)%b\n" "$GREEN" "$NC"; else printf "5) Disallow blank passwords (PAM/SSH)\n"; fi
-    printf "a) Run ALL of the above in sequence\n"
-    printf "b) Back to main menu\n"
+ap_pam_pwquality_inline () {
+  local target="/etc/pam.d/common-password"
 
-    read -rp $'Enter choice: ' choice
-    case "$choice" in
-      1)
-        echo -e "${GREEN}[Account Policy] Running: /etc/login.defs hardening${NC}"
-        ap_secure_login_defs; AP_COMPLETED[1]=1
-        ;;
-      2)
-        echo -e "${GREEN}[Account Policy] Running: Insert pam_pwquality into common-password${NC}"
-        ap_pam_pwquality_inline; AP_COMPLETED[2]=1
-        ;;
-      3)
-        echo -e "${GREEN}[Account Policy] Running: Configure /etc/security/pwquality.conf${NC}"
-        ap_pwquality_conf_file; AP_COMPLETED[3]=1
-        ;;
-      4)
-        echo -e "${GREEN}[Account Policy] Running: Configure pam_faillock (lockout)${NC}"
-        ap_lockout_faillock; AP_COMPLETED[4]=1
-        ;;
-      5)
-        echo -e "${GREEN}[Account Policy] Running: Disallow blank passwords (PAM/SSH)${NC}"
-        ap_disallow_blank_passwords; AP_COMPLETED[5]=1
-        ;;
-      a|A)
-        echo -e "${GREEN}[Account Policy] Running all sections...${NC}"
-        ap_secure_login_defs; AP_COMPLETED[1]=1
-        ap_pam_pwquality_inline; AP_COMPLETED[2]=1
-        ap_pwquality_conf_file; AP_COMPLETED[3]=1
-        ap_lockout_faillock; AP_COMPLETED[4]=1
-        ap_disallow_blank_passwords; AP_COMPLETED[5]=1
-        echo -e "${GREEN}[Account Policy] Completed all sections.${NC}"
-        ;;
-      b|B|q|Q)
-        echo -e "${CYAN}[Account Policy] Returning to main menu.${NC}"
-        break
-        ;;
-      *)
-        echo -e "${C_RED}Invalid option${C_RESET}"
-        ;;
-    esac
-  done
+  if [ ! -f "$target" ]; then
+    echo "Warning: $target not found. Skipping pwquality rule." >&2
+    return 1
+  fi
+
+  # detect available module: prefer pam_pwquality, else pam_cracklib
+  local mod=""
+  if [ -e /lib/security/pam_pwquality.so ] || [ -e /lib64/security/pam_pwquality.so ] || [ -e /usr/lib/security/pam_pwquality.so ] || [ -e /lib/x86_64-linux-gnu/security/pam_pwquality.so ]; then
+    mod="pam_pwquality.so"
+  elif [ -e /lib/security/pam_cracklib.so ] || [ -e /lib64/security/pam_cracklib.so ] || [ -e /usr/lib/security/pam_cracklib.so ] || [ -e /lib/x86_64-linux-gnu/security/pam_cracklib.so ]; then
+    mod="pam_cracklib.so"
+  else
+    echo "Warning: neither pam_pwquality nor pam_cracklib modules found on this system; skipping password quality insertion." >&2
+    return 1
+  fi
+
+  # Build the appropriate line depending on module
+  local line_to_add
+  if [ "$mod" = "pam_pwquality.so" ]; then
+    line_to_add="password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
+  else
+    line_to_add="password requisite pam_cracklib.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
+  fi
+
+  # Create a timestamped backup
+  local ts tmp_new
+  ts=$(date +%Y%m%d%H%M%S)
+  sudo cp -a "$target" "${target}.bak.${ts}"
+
+  # If the exact line already exists, no-op
+  if sudo grep -q -x -- "${line_to_add}" "$target" 2>/dev/null; then
+    echo "Password quality rule already in place in $target."
+    return 0
+  fi
+
+  # Remove any existing pam_pwquality or pam_cracklib lines to keep idempotent
+  sudo sed -i '/pam_pwquality.so/d;/pam_cracklib.so/d' "$target"
+
+  # Insert the desired line before the first occurrence of pam_unix.so; if none, append
+  tmp_new="${target}.new.$$"
+  sudo awk -v ins="$line_to_add" 'BEGIN{inserted=0} { print $0; if (!inserted && $0 ~ /pam_unix.so/) { print ins; inserted=1 } } END{ if (!inserted) print ins }' "$target" > "$tmp_new"
+  sudo mv "$tmp_new" "$target"
+
+  echo "Inserted password quality line into $target"
+  return 0
 }
 
 # -------------------------------------------------------------------
@@ -98,63 +93,7 @@ ap_secure_login_defs () {
   return 0
 }
 
-# -------------------------------------------------------------------
-# Insert pam_pwquality inline in common-password
-# -------------------------------------------------------------------
-ap_pam_pwquality_inline () {
-  local target="/etc/pam.d/common-password"
-  local line_to_add="password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
 
-  if [ ! -f "$target" ]; then
-    echo "Warning: $target not found. Skipping pwquality rule." >&2
-    return 1
-  fi
-
-  # Create a timestamped backup
-  local ts
-  ts=$(date +%Y%m%d%H%M%S)
-  sudo cp -a "$target" "${target}.bak.${ts}"
-
-<<<<<<< HEAD
-  # Idempotent: remove any existing lines referencing pam_pwquality or pam_cracklib
-  sudo sed -i '/pam_pwquality.so/d;/pam_cracklib.so/d' "$target"
-  # Insert the desired line before the first occurrence of pam_unix.so in the password stack
-  # Use awk to reliably insert the line before the first pam_unix.so occurrence and be portable
-  tmp_new="${target}.new.$$"
-  sudo awk -v ins="$line_to_add" 'BEGIN{inserted=0} {
-      print $0
-      if (!inserted && $0 ~ /pam_unix.so/) {
-        # insert the pwquality/cracklib line right before pam_unix.so
-        print ins
-        inserted=1
-      }
-    }
-    END{ if (!inserted) print ins }' "$target" > "$tmp_new"
-  sudo mv "$tmp_new" "$target"
-
-  echo "Inserted password quality line into $target"
-=======
-  # Check if the exact line already exists (ignoring leading/trailing whitespace)
-  if sudo grep -q -x "[[:space:]]*${line_to_add}[[:space:]]*" "$target"; then
-    echo "Password quality rule already in place in $target."
-    return 0
-  fi
-
-  # If not, remove any other pam_pwquality.so lines to ensure idempotency
-  sudo sed -i '/pam_pwquality.so/d' "$target"
-
-  # Insert the desired line before the first occurrence of pam_unix.so
-  # The `i\` command in sed inserts the text before the matched line.
-  if sudo sed -i '/pam_unix.so/i '"$line_to_add" "$target"; then
-    echo "Inserted password quality rule into $target."
-  else
-    echo "Warning: Failed to insert password quality rule into $target." >&2
-    return 1
-  fi
-
->>>>>>> 6478be63185535fab35579c6a735eda24440c54c
-  return 0
-}
 
 # -------------------------------------------------------------------
 # Configure /etc/security/pwquality.conf
