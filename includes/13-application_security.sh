@@ -111,7 +111,62 @@ JSON
   fi
 }
 appsec_secure_chromium  () { echo "[AppSec] Chrome/Chromium orchestrator (TODO)"; }
-appsec_secure_ssh       () { echo "[AppSec] OpenSSH orchestrator (TODO)"; }
+appsec_secure_ssh () {
+  # Enforce secure OpenSSH server settings.
+  # Settings applied (idempotent):
+  #   - PermitRootLogin no
+  #   - AllowTcpForwarding no
+  #   - X11Forwarding no
+  #   - PermitUserEnvironment no
+  #   - LoginGraceTime 60s
+  #   - MaxAuthTries 3
+  # Creates a timestamped backup of /etc/ssh/sshd_config and respects DRY_RUN.
+
+  local target="/etc/ssh/sshd_config"
+  local ts
+  ts=$(date +%Y%m%d%H%M%S)
+
+  echo "[AppSec] Securing OpenSSH server settings"
+
+  if [ ! -f "$target" ]; then
+    echo "Warning: $target not found. Cannot secure OpenSSH." >&2
+    return 1
+  fi
+
+  ap_mk_backup "$target" >/dev/null || true
+
+  # Helper to set or append a directive idempotently
+  set_sshd_directive() {
+    local key="$1" value="$2"
+    if sudo grep -qi -E "^\s*${key}\b" "$target"; then
+      if [ "${DRY_RUN:-0}" -eq 1 ]; then
+        echo "DRY RUN: would replace existing ${key} line with: ${key} ${value}"
+      else
+        sudo sed -ri "s|^\s*#?\s*(${key})\b.*|${key} ${value}|g" "$target"
+        echo "Set ${key} ${value} in $target"
+      fi
+    else
+      if [ "${DRY_RUN:-0}" -eq 1 ]; then
+        echo "DRY RUN: would append: ${key} ${value} to $target"
+      else
+        echo "${key} ${value}" | sudo tee -a "$target" > /dev/null
+        echo "Appended ${key} ${value} to $target"
+      fi
+    fi
+  }
+
+  # Apply requested directives
+  set_sshd_directive PermitRootLogin no
+  set_sshd_directive AllowTcpForwarding no
+  set_sshd_directive X11Forwarding no
+  set_sshd_directive PermitUserEnvironment no
+  set_sshd_directive LoginGraceTime 60s
+  set_sshd_directive MaxAuthTries 3
+
+  echo "OpenSSH configuration updated. To apply changes, restart sshd (e.g. 'sudo systemctl restart sshd' or 'sudo service ssh restart')."
+  echo "Backups are available with the .bak.TIMESTAMP suffix created earlier. Use ap_restore_backup to restore if needed."
+  return 0
+}
 appsec_secure_samba     () { echo "[AppSec] Samba orchestrator (TODO)"; }
 appsec_secure_dns       () { echo "[AppSec] DNS/resolvers orchestrator (TODO)"; }
 appsec_secure_web       () { echo "[AppSec] Web server orchestrator (TODO)"; }
