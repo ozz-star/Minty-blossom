@@ -244,6 +244,71 @@ ap_pwquality_conf_file () {
   return 0
 }
 
+
+# -------------------------------------------------------------------
+# Force-apply pwquality settings (non-interactive)
+# This will create backups and write the minlen=12 setting and ensure
+# a matching pam_pwquality/pam_cracklib line is present in common-password.
+# Use with sudo/root. This bypasses DRY_RUN and is intended for emergency/apply.
+# -------------------------------------------------------------------
+ap_force_apply_pwquality() {
+  local pwq=/etc/security/pwquality.conf
+  local pam_common=/etc/pam.d/common-password
+  local ts
+  ts=$(date +%Y%m%d%H%M%S)
+
+  echo "[ap_force_apply_pwquality] Creating backups and forcing minlen=12..."
+  ap_mk_backup "$pwq" >/dev/null || true
+  ap_mk_backup "$pam_common" >/dev/null || true
+
+  # Ensure pwquality.conf exists
+  if [ ! -f "$pwq" ]; then
+    sudo touch "$pwq"
+    echo "Created empty $pwq"
+  fi
+
+  # Set minlen = 12 idempotently
+  if sudo grep -q -E '^[[:space:]]*minlen\b' "$pwq"; then
+    sudo sed -ri 's|^[[:space:]]*#?[[:space:]]*minlen\b.*|minlen = 12|g' "$pwq"
+  else
+    echo "minlen = 12" | sudo tee -a "$pwq" > /dev/null
+  fi
+  echo "Set minlen = 12 in $pwq"
+
+  # Detect pam module (prefer pam_pwquality, else pam_cracklib)
+  local mod=""
+  if [ -e /lib/security/pam_pwquality.so ] || [ -e /lib64/security/pam_pwquality.so ] || [ -e /usr/lib/security/pam_pwquality.so ] || [ -e /lib/x86_64-linux-gnu/security/pam_pwquality.so ]; then
+    mod="pam_pwquality.so"
+  elif [ -e /lib/security/pam_cracklib.so ] || [ -e /lib64/security/pam_cracklib.so ] || [ -e /usr/lib/security/pam_cracklib.so ] || [ -e /lib/x86_64-linux-gnu/security/pam_cracklib.so ]; then
+    mod="pam_cracklib.so"
+  else
+    echo "Warning: no pam_pwquality or pam_cracklib module found; pwquality.conf updated but PAM may not use it." >&2
+    return 0
+  fi
+
+  local line_to_add
+  if [ "$mod" = "pam_pwquality.so" ]; then
+    line_to_add="password requisite pam_pwquality.so retry=3 minlen=12 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
+  else
+    line_to_add="password requisite pam_cracklib.so retry=3 minlen=12 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
+  fi
+
+  # Ensure pam_common exists
+  if [ ! -f "$pam_common" ]; then
+    sudo touch "$pam_common"
+    echo "Created empty $pam_common"
+  fi
+
+  # Remove any existing pam_pwquality/cracklib lines and insert desired line before pam_unix.so
+  sudo sed -i '/pam_pwquality.so/d;/pam_cracklib.so/d' "$pam_common" || true
+  tmpf="${pam_common}.new.${ts}"
+  sudo awk -v ins="$line_to_add" 'BEGIN{inserted=0} { print $0; if (!inserted && $0 ~ /pam_unix.so/) { print ins; inserted=1 } } END{ if (!inserted) print ins }' "$pam_common" > "$tmpf"
+  sudo mv "$tmpf" "$pam_common"
+
+  echo "Inserted/ensured pwquality PAM line in $pam_common"
+  return 0
+}
+
 # -------------------------------------------------------------------
 # Configure pam_faillock in common-auth/common-account
 # -------------------------------------------------------------------
