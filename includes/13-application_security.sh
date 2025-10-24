@@ -73,7 +73,10 @@ appsec_secure_firefox () {
       "browser.safebrowsing.phishing.enabled": true,
       "browser.safebrowsing.downloads.enabled": true,
       "browser.safebrowsing.downloads.remote.block_potentially_unwanted": true,
-      "browser.safebrowsing.downloads.remote.block_uncommon": true
+      "browser.safebrowsing.downloads.remote.block_uncommon": true,
+      "security.OCSP.enabled": 1,
+      "security.OCSP.require": true,
+      "security.enterprise_roots.enabled": true
     }
   }
 }
@@ -83,8 +86,29 @@ JSON
   sudo chown root:root "$policies_file"
   sudo chmod 0644 "$policies_file"
 
-  echo "Wrote Firefox policies to $policies_file (Safe Browsing download protections enabled)"
+  echo "Wrote Firefox policies to $policies_file (Safe Browsing + certificate checks enabled)"
   echo "If you need to revert, restore the backup file located at ${policies_file}.bak.<timestamp>"
+
+  # Also apply to /usr/lib/firefox/distribution if present (older/default package path)
+  dist_dir="/usr/lib/firefox/distribution"
+  dist_file="${dist_dir}/policies.json"
+  if [ -d "$dist_dir" ]; then
+    if [ -f "$dist_file" ]; then
+      sudo cp -a "$dist_file" "${dist_file}.bak.${ts}"
+      echo "Backup created: ${dist_file}.bak.${ts}"
+    fi
+    sudo cp -a "$policies_file" "$dist_file"
+    sudo chown root:root "$dist_file"
+    sudo chmod 0644 "$dist_file"
+    echo "Also wrote policies to $dist_file"
+  fi
+
+  # Note on snap-installed Firefox
+  if command -v snap >/dev/null 2>&1 && snap list firefox >/dev/null 2>&1; then
+    echo "Note: Firefox is installed as a snap on this system. Snap-packaged Firefox may not read /etc/firefox/policies;"
+    echo "you may need to apply policies inside the snap environment or use distro-specific guidance."
+    echo "For snap, check /var/snap/firefox/common or consult snap packaging docs."
+  fi
 }
 appsec_secure_chromium  () { echo "[AppSec] Chrome/Chromium orchestrator (TODO)"; }
 appsec_secure_ssh       () { echo "[AppSec] OpenSSH orchestrator (TODO)"; }
