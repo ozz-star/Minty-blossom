@@ -18,6 +18,7 @@ invoke_user_auditing () {
     if [ "${UA_COMPLETED[7]:-0}" = "1" ]; then printf "%b7) Set shells for system accounts to /usr/sbin/nologin%b\n" "$GREEN" "$NC"; else printf "7) Set shells for system accounts to /usr/sbin/nologin\n"; fi
   if [ "${UA_COMPLETED[8]:-0}" = "1" ]; then printf "%b8) Create a new user%b\n" "$GREEN" "$NC"; else printf "8) Create a new user\n"; fi
   if [ "${UA_COMPLETED[9]:-0}" = "1" ]; then printf "%b9) Add a user to groups%b\n" "$GREEN" "$NC"; else printf "9) Add a user to groups\n"; fi
+  if [ "${UA_COMPLETED[10]:-0}" = "1" ]; then printf "%b10) Disable guest account%b\n" "$GREEN" "$NC"; else printf "10) Disable guest account\n"; fi
     printf "a) Run ALL of the above in sequence\n"
     printf "b) Back to main menu\n"
 
@@ -68,9 +69,14 @@ invoke_user_auditing () {
         ua_add_user_to_groups
         UA_COMPLETED[9]=1
         ;;
+      10)
+        echo -e "${GREEN}[User Auditing] Running: Disable guest account${NC}"
+        ua_disable_guest_account
+        UA_COMPLETED[10]=1
+        ;;
       a|A)
         echo -e "${GREEN}[User Auditing] Running all sections...${NC}"
-        ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
+  ua_audit_interactive_remove_unauthorized_users; UA_COMPLETED[1]=1
         ua_audit_interactive_remove_unauthorized_sudoers; UA_COMPLETED[2]=1
         ua_force_temp_passwords; UA_COMPLETED[3]=1
         ua_remove_non_root_uid0; UA_COMPLETED[4]=1
@@ -78,7 +84,8 @@ invoke_user_auditing () {
         ua_set_shells_standard_and_root_bash; UA_COMPLETED[6]=1
         ua_set_shells_system_accounts_nologin; UA_COMPLETED[7]=1
         ua_create_user; UA_COMPLETED[8]=1
-        ua_add_user_to_groups; UA_COMPLETED[9]=1
+  ua_add_user_to_groups; UA_COMPLETED[9]=1
+  ua_disable_guest_account; UA_COMPLETED[10]=1
         echo -e "${GREEN}[User Auditing] Completed all sections.${NC}"
         ;;
       b|B|q|Q)
@@ -507,6 +514,83 @@ ua_add_users_to_groups () {
     fi
   done
 
+  return 0
+}
+
+
+# -------------------------------------------------------------------
+# 10) Disable guest account (LightDM/GDM)
+# Creates backups of modified files and is idempotent. Respects DRY_RUN via
+# the DRY_RUN environment variable (if set to 1, no writes are performed).
+# -------------------------------------------------------------------
+ua_disable_guest_account () {
+  local ts lf ldir gdmf tmp
+  ts=$(date +%Y%m%d%H%M%S)
+
+  echo "Disabling guest account (LightDM/GDM handling)"
+
+  # DRY_RUN preview
+  if [ "${DRY_RUN:-0}" -eq 1 ]; then
+    echo "DRY RUN: would ensure LightDM config disables guest (allow-guest=false)"
+    echo "DRY RUN: would ensure GDM3 config disables guest (AllowGuest=false)"
+    echo "DRY RUN: would remove local user 'guest' if present"
+    return 0
+  fi
+
+  # 1) LightDM: /etc/lightdm/lightdm.conf.d/50-disable-guest.conf
+  ldir="/etc/lightdm/lightdm.conf.d"
+  lf="${ldir}/50-disable-guest.conf"
+  if [ ! -d "$ldir" ]; then
+    sudo mkdir -p "$ldir"
+    echo "Created: $ldir"
+  fi
+  if [ -f "$lf" ]; then
+    sudo cp -a "$lf" "${lf}.bak.${ts}"
+    echo "Backup created: ${lf}.bak.${ts}"
+  fi
+  sudo tee "$lf" > /dev/null <<'CONF'
+[Seat:*]
+allow-guest=false
+CONF
+  sudo chown root:root "$lf"; sudo chmod 0644 "$lf"
+  echo "Wrote LightDM policy: $lf"
+
+  # Also ensure /etc/lightdm/lightdm.conf has allow-guest=false (append or replace)
+  if [ -f /etc/lightdm/lightdm.conf ]; then
+    sudo cp -a /etc/lightdm/lightdm.conf "/etc/lightdm/lightdm.conf.bak.${ts}"
+    sudo sed -ri '/^\s*allow-guest\s*=.*/d' /etc/lightdm/lightdm.conf
+    printf "\n[Seat:*]\nallow-guest=false\n" | sudo tee -a /etc/lightdm/lightdm.conf > /dev/null
+    echo "Ensured allow-guest=false in /etc/lightdm/lightdm.conf"
+  fi
+
+  # 2) GDM3: /etc/gdm3/custom.conf
+  gdmf="/etc/gdm3/custom.conf"
+  if [ -f "$gdmf" ]; then
+    sudo cp -a "$gdmf" "${gdmf}.bak.${ts}"
+    echo "Backup created: ${gdmf}.bak.${ts}"
+    # If AllowGuest exists, replace it; else append under [daemon]
+    if sudo grep -q -E '^\s*AllowGuest\b' "$gdmf"; then
+      sudo sed -ri 's|^\s*AllowGuest\b.*|AllowGuest=false|g' "$gdmf"
+    else
+      if sudo grep -q -E '^\s*\[daemon\]' "$gdmf"; then
+        sudo sed -i '/^\s*\[daemon\]/a AllowGuest=false' "$gdmf"
+      else
+        printf "\n[daemon]\nAllowGuest=false\n" | sudo tee -a "$gdmf" > /dev/null
+      fi
+    fi
+    echo "Ensured AllowGuest=false in $gdmf"
+  fi
+
+  # 3) Remove any explicit local user named 'guest' (non-destructive)
+  if getent passwd guest >/dev/null 2>&1; then
+    if sudo userdel -r guest >/dev/null 2>&1; then
+      echo "Removed local 'guest' user"
+    else
+      echo "Warning: failed to remove local 'guest' user" >&2
+    fi
+  fi
+
+  echo "Guest account disabled (LightDM/GDM). Restart display manager or reboot to ensure changes take effect."
   return 0
 }
 
