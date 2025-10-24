@@ -137,9 +137,9 @@ ap_pam_pwquality_inline () {
   # Build the appropriate line depending on module
   local line_to_add
   if [ "$mod" = "pam_pwquality.so" ]; then
-    line_to_add="password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
+    line_to_add="password requisite pam_pwquality.so retry=3 minlen=12 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
   else
-    line_to_add="password requisite pam_cracklib.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
+    line_to_add="password requisite pam_cracklib.so retry=3 minlen=12 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
   fi
 
   # Create a timestamped backup
@@ -224,7 +224,7 @@ ap_pwquality_conf_file () {
   fi
 
   declare -A wanted=(
-    [minlen]=10 [minclass]=2 [maxrepeat]=2 [maxclassrepeat]=6
+    [minlen]=12 [minclass]=2 [maxrepeat]=2 [maxclassrepeat]=6
     [lcredit]=-1 [ucredit]=-1 [dcredit]=-1 [ocredit]=-1
     [maxsequence]=2 [difok]=5 [gecoscheck]=1
   )
@@ -389,11 +389,16 @@ ap_disallow_blank_passwords () {
   for f in "${pam_files[@]}"; do
     if [ -f "$f" ]; then
       ap_mk_backup "$f" >/dev/null || true
-      # Remove the 'nullok' token which allows empty passwords
-      sudo sed -ri 's/\bnullok\b//g' "$f"
-      # Collapse multiple spaces/tabs to single space for cleanliness
-      sudo sed -ri 's/[[:space:]]+/ /g' "$f"
-      echo "Sanitized $f (removed nullok tokens)"
+      # Remove tokens which allow empty passwords (nullok, nullok_secure)
+      if [ "$DRY_RUN" -eq 1 ]; then
+        echo "DRY RUN: would remove 'nullok'/'nullok_secure' tokens from $f"
+        echo "DRY RUN: would collapse multiple whitespace in $f"
+      else
+        sudo sed -ri 's/\bnullok(_secure)?\b//g' "$f"
+        # Collapse multiple spaces/tabs to single space for cleanliness
+        sudo sed -ri 's/[[:space:]]+/ /g' "$f"
+        echo "Sanitized $f (removed nullok tokens)"
+      fi
     fi
   done
 
@@ -402,11 +407,19 @@ ap_disallow_blank_passwords () {
   if [ -f "$sshf" ]; then
     ap_mk_backup "$sshf" >/dev/null || true
     if sudo grep -q -E '^\s*PermitEmptyPasswords\b' "$sshf"; then
-      sudo sed -ri 's/^\s*PermitEmptyPasswords\b.*$/PermitEmptyPasswords no/' "$sshf"
-      echo "Set PermitEmptyPasswords no in $sshf"
+      if [ "$DRY_RUN" -eq 1 ]; then
+        echo "DRY RUN: would set PermitEmptyPasswords no in $sshf"
+      else
+        sudo sed -ri 's/^\s*PermitEmptyPasswords\b.*$/PermitEmptyPasswords no/' "$sshf"
+        echo "Set PermitEmptyPasswords no in $sshf"
+      fi
     else
-      echo "\nPermitEmptyPasswords no" | sudo tee -a "$sshf" > /dev/null
-      echo "Appended PermitEmptyPasswords no to $sshf"
+      if [ "$DRY_RUN" -eq 1 ]; then
+        echo "DRY RUN: would append PermitEmptyPasswords no to $sshf"
+      else
+        printf '\nPermitEmptyPasswords no\n' | sudo tee -a "$sshf" > /dev/null
+        echo "Appended PermitEmptyPasswords no to $sshf"
+      fi
     fi
   else
     echo "Warning: $sshf not found; cannot enforce PermitEmptyPasswords." >&2
