@@ -56,6 +56,65 @@ invoke_account_policy () {
   done
 }
 
+# DRY_RUN support and safe operation helpers
+DRY_RUN=${DRY_RUN:-0}
+
+# Create a timestamped backup of a file (respects DRY_RUN). Prints the backup path.
+ap_mk_backup() {
+  local target="$1"
+  local ts bak
+  ts=$(date +%Y%m%d%H%M%S)
+  bak="${target}.bak.${ts}"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "DRY RUN: would create backup $bak"
+  else
+    sudo cp -a "$target" "$bak"
+    echo "Backup created: $bak"
+  fi
+  echo "$bak"
+}
+
+# Run a command or echo it if DRY_RUN is enabled. Accepts a single string command.
+ap_cmd() {
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "DRY RUN: $*"
+  else
+    bash -c "$*"
+  fi
+}
+
+# Safe move (respects DRY_RUN)
+ap_mv() {
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "DRY RUN: mv $*"
+  else
+    sudo mv "$@"
+  fi
+}
+
+# Small helpers to list and restore backups created by these functions
+ap_list_backups() {
+  echo "Known backup files (from /etc/pam.d and /etc):"
+  ls -1 /etc/pam.d/*.bak.* /etc/shadow.bak.* 2>/dev/null || echo "(no backups found)"
+}
+
+ap_restore_backup() {
+  echo "Available backups:"; ap_list_backups
+  read -rp $'Enter exact backup path to restore: ' sel
+  [ -z "${sel}" ] && { echo "No selection."; return 1; }
+  if [ ! -f "$sel" ]; then echo "Not found: $sel"; return 1; fi
+  # Derive original by removing .bak.TIMESTAMP suffix
+  orig=$(echo "$sel" | sed -E 's/\.bak\.[0-9]{8,}//')
+  if [ -z "$orig" ]; then echo "Cannot determine original path for $sel"; return 1; fi
+  read -rp $"Restore $sel -> $orig ? [y/N] " ok
+  if [[ "$ok" =~ ^[Yy] ]]; then
+    sudo cp -a "$sel" "$orig"
+    echo "Restored $orig from $sel"
+  else
+    echo "Aborted."
+  fi
+}
+
 ap_pam_pwquality_inline () {
   local target="/etc/pam.d/common-password"
 
