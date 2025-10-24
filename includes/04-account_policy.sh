@@ -56,6 +56,56 @@ invoke_account_policy () {
   done
 }
 
+ap_pam_pwquality_inline () {
+  local target="/etc/pam.d/common-password"
+
+  if [ ! -f "$target" ]; then
+    echo "Warning: $target not found. Skipping pwquality rule." >&2
+    return 1
+  fi
+
+  # detect available module: prefer pam_pwquality, else pam_cracklib
+  local mod=""
+  if [ -e /lib/security/pam_pwquality.so ] || [ -e /lib64/security/pam_pwquality.so ] || [ -e /usr/lib/security/pam_pwquality.so ] || [ -e /lib/x86_64-linux-gnu/security/pam_pwquality.so ]; then
+    mod="pam_pwquality.so"
+  elif [ -e /lib/security/pam_cracklib.so ] || [ -e /lib64/security/pam_cracklib.so ] || [ -e /usr/lib/security/pam_cracklib.so ] || [ -e /lib/x86_64-linux-gnu/security/pam_cracklib.so ]; then
+    mod="pam_cracklib.so"
+  else
+    echo "Warning: neither pam_pwquality nor pam_cracklib modules found on this system; skipping password quality insertion." >&2
+    return 1
+  fi
+
+  # Build the appropriate line depending on module
+  local line_to_add
+  if [ "$mod" = "pam_pwquality.so" ]; then
+    line_to_add="password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
+  else
+    line_to_add="password requisite pam_cracklib.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
+  fi
+
+  # Create a timestamped backup
+  local ts tmp_new
+  ts=$(date +%Y%m%d%H%M%S)
+  sudo cp -a "$target" "${target}.bak.${ts}"
+
+  # If the exact line already exists, no-op
+  if sudo grep -q -x -- "${line_to_add}" "$target" 2>/dev/null; then
+    echo "Password quality rule already in place in $target."
+    return 0
+  fi
+
+  # Remove any existing pam_pwquality or pam_cracklib lines to keep idempotent
+  sudo sed -i '/pam_pwquality.so/d;/pam_cracklib.so/d' "$target"
+
+  # Insert the desired line before the first occurrence of pam_unix.so; if none, append
+  tmp_new="${target}.new.$$"
+  sudo awk -v ins="$line_to_add" 'BEGIN{inserted=0} { print $0; if (!inserted && $0 ~ /pam_unix.so/) { print ins; inserted=1 } } END{ if (!inserted) print ins }' "$target" > "$tmp_new"
+  sudo mv "$tmp_new" "$target"
+
+  echo "Inserted password quality line into $target"
+  return 0
+}
+
 # -------------------------------------------------------------------
 # /etc/login.defs hardening
 # -------------------------------------------------------------------
@@ -98,43 +148,7 @@ ap_secure_login_defs () {
   return 0
 }
 
-# -------------------------------------------------------------------
-# Insert pam_pwquality inline in common-password
-# -------------------------------------------------------------------
-ap_pam_pwquality_inline () {
-  local target="/etc/pam.d/common-password"
-  local line_to_add="password requisite pam_pwquality.so retry=3 minlen=10 difok=5 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1"
 
-  if [ ! -f "$target" ]; then
-    echo "Warning: $target not found. Skipping pwquality rule." >&2
-    return 1
-  fi
-
-  # Create a timestamped backup
-  local ts
-  ts=$(date +%Y%m%d%H%M%S)
-  sudo cp -a "$target" "${target}.bak.${ts}"
-
-  # Check if the exact line already exists (ignoring leading/trailing whitespace)
-  if sudo grep -q -x "[[:space:]]*${line_to_add}[[:space:]]*" "$target"; then
-    echo "Password quality rule already in place in $target."
-    return 0
-  fi
-
-  # If not, remove any other pam_pwquality.so lines to ensure idempotency
-  sudo sed -i '/pam_pwquality.so/d' "$target"
-
-  # Insert the desired line before the first occurrence of pam_unix.so
-  # The `i\` command in sed inserts the text before the matched line.
-  if sudo sed -i '/pam_unix.so/i '"$line_to_add" "$target"; then
-    echo "Inserted password quality rule into $target."
-  else
-    echo "Warning: Failed to insert password quality rule into $target." >&2
-    return 1
-  fi
-
-  return 0
-}
 
 # -------------------------------------------------------------------
 # Configure /etc/security/pwquality.conf
@@ -176,12 +190,32 @@ ap_pwquality_conf_file () {
 # Configure pam_faillock in common-auth/common-account
 # -------------------------------------------------------------------
 ap_lockout_faillock () {
-  # Idempotent insertion of pam_faillock lines into PAM config files
+  # Idempotent insertion of lockout lines into PAM config files
   set -u
 
   auth_file=/etc/pam.d/common-auth
   acct_file=/etc/pam.d/common-account
   ts=$(date +%Y%m%d%H%M%S)
+
+  # detect available module: prefer pam_faillock, else pam_tally2
+  use_faillock=0
+  use_tally2=0
+  faillock_paths=(/lib/security/pam_faillock.so /lib64/security/pam_faillock.so /usr/lib/security/pam_faillock.so /lib/x86_64-linux-gnu/security/pam_faillock.so)
+  tally_paths=(/lib/security/pam_tally2.so /lib64/security/pam_tally2.so /usr/lib/security/pam_tally2.so /lib/x86_64-linux-gnu/security/pam_tally2.so)
+
+  for p in "${faillock_paths[@]}"; do
+    if [ -e "$p" ]; then use_faillock=1; break; fi
+  done
+  if [ "$use_faillock" -eq 0 ]; then
+    for p in "${tally_paths[@]}"; do
+      if [ -e "$p" ]; then use_tally2=1; break; fi
+    done
+  fi
+
+  if [ "$use_faillock" -eq 0 ] && [ "$use_tally2" -eq 0 ]; then
+    echo "Warning: neither pam_faillock nor pam_tally2 found on this system; skipping lockout configuration." >&2
+    return 1
+  fi
 
   make_backup() {
     local f=$1
@@ -199,86 +233,88 @@ ap_lockout_faillock () {
   make_backup "$auth_file"
   make_backup "$acct_file"
 
-  # Desired exact lines (use single spaces for matching/creation)
-  preauth_line='auth        required      pam_faillock.so preauth'
-  authfail_line='auth        [default=die] pam_faillock.so authfail'
-  authsucc_line='auth        sufficient    pam_faillock.so authsucc'
-  account_line='account     required      pam_faillock.so'
-
-  # Ensure lines exist exactly once in common-auth
-  # Remove any existing pam_faillock lines to avoid duplicates, but keep a copy in the backup
-  # Use grep -v for portability instead of awk to avoid builtin name collisions.
-  sudo grep -v 'pam_faillock.so' "$auth_file" > "${auth_file}.tmp.$$" || sudo cp -a "$auth_file" "${auth_file}.tmp.$$"
-
-  # Insert preauth before first pam_unix.so, then authfail immediately after pam_unix.so
-  # If pam_unix.so not found, append at end. Use awk for controlled insertion but avoid reserved var names.
-  awk -v pre="$preauth_line" -v fail="$authfail_line" -v succ="$authsucc_line" '
-    BEGIN{ pre_inserted=0; fail_inserted=0 }
-    {
-      print $0
-      if (!pre_inserted && $0 ~ /pam_unix.so/) {
-        print pre
-        pre_inserted=1
-      }
-      if (pre_inserted && $0 ~ /pam_unix.so/ && !fail_inserted) {
-        print fail
-        fail_inserted=1
-      }
-    }
-    END{
-      if (!pre_inserted) {
-        print pre
-      }
-      if (!fail_inserted) {
-        print fail
-      }
-      # Always ensure authsucc is present once
-      print succ
-    }' "${auth_file}.tmp.$$" > "${auth_file}.new.$$"
-
-  # Move the new file into place
-  sudo mv "${auth_file}.new.$$" "$auth_file"
-  rm -f "${auth_file}.tmp.$$"
-
-  # Provide confirmations for common-auth: check if lines present exactly once
-  # Use grep -xF to count exact full-line matches (portable and avoids awk builtin collisions)
+  # helper to count exact lines
   count_line() {
     local line="$1" file="$2"
-    # grep exit status may be non-zero when no matches; redirect errors and print integer
     sudo grep -xF -- "$line" "$file" 2>/dev/null | wc -l || echo 0
   }
 
-  c_pre=$(count_line "$preauth_line" "$auth_file")
-  c_fail=$(count_line "$authfail_line" "$auth_file")
-  c_succ=$(count_line "$authsucc_line" "$auth_file")
-  if [ "$c_pre" -eq 1 ]; then
-    echo "Present: preauth line in $auth_file"
-  else
-    echo "Warning: preauth lines count=$c_pre in $auth_file"
-  fi
-  if [ "$c_fail" -eq 1 ]; then
-    echo "Present: authfail line in $auth_file"
-  else
-    echo "Warning: authfail lines count=$c_fail in $auth_file"
-  fi
-  if [ "$c_succ" -eq 1 ]; then
-    echo "Present: authsucc line in $auth_file"
-  else
-    echo "Warning: authsucc lines count=$c_succ in $auth_file"
-  fi
+  if [ "$use_faillock" -eq 1 ]; then
+    # Desired exact lines for faillock
+    preauth_line='auth        required      pam_faillock.so preauth'
+    authfail_line='auth        [default=die] pam_faillock.so authfail'
+    authsucc_line='auth        sufficient    pam_faillock.so authsucc'
+    account_line='account     required      pam_faillock.so'
 
-  # Ensure account line in common-account exactly once
-  # Remove existing pam_faillock account lines and re-add exactly once
-  sudo awk '!/pam_faillock.so/ {print $0}' "$acct_file" > "${acct_file}.tmp.$$"
-  # Append the exact account line
-  echo "$account_line" | sudo tee -a "${acct_file}.tmp.$$" > /dev/null
-  sudo mv "${acct_file}.tmp.$$" "$acct_file"
+    # Remove any existing faillock lines and rebuild auth_file with proper insertions
+    sudo grep -v 'pam_faillock.so' "$auth_file" > "${auth_file}.tmp.$$" || sudo cp -a "$auth_file" "${auth_file}.tmp.$$"
 
-  c_acc=$(count_line "$account_line" "$acct_file")
-  if [ "$c_acc" -eq 1 ]; then
-    echo "Present: account line in $acct_file"
-  else
-    echo "Warning: account lines count=$c_acc in $acct_file"
+    awk -v pre="$preauth_line" -v fail="$authfail_line" -v succ="$authsucc_line" 'BEGIN{pre_inserted=0; fail_inserted=0} { print $0; if (!pre_inserted && $0 ~ /pam_unix.so/) { print pre; pre_inserted=1 } if (pre_inserted && $0 ~ /pam_unix.so/ && !fail_inserted) { print fail; fail_inserted=1 }} END{ if (!pre_inserted) print pre; if (!fail_inserted) print fail; print succ }' "${auth_file}.tmp.$$" > "${auth_file}.new.$$"
+
+    sudo mv "${auth_file}.new.$$" "$auth_file"
+    rm -f "${auth_file}.tmp.$$"
+
+    c_pre=$(count_line "$preauth_line" "$auth_file")
+    c_fail=$(count_line "$authfail_line" "$auth_file")
+    c_succ=$(count_line "$authsucc_line" "$auth_file")
+    if [ "$c_pre" -eq 1 ]; then
+      echo "Present: preauth line in $auth_file"
+    else
+      echo "Warning: preauth lines count=$c_pre in $auth_file"
+    fi
+    if [ "$c_fail" -eq 1 ]; then
+      echo "Present: authfail line in $auth_file"
+    else
+      echo "Warning: authfail lines count=$c_fail in $auth_file"
+    fi
+    if [ "$c_succ" -eq 1 ]; then
+      echo "Present: authsucc line in $auth_file"
+    else
+      echo "Warning: authsucc lines count=$c_succ in $auth_file"
+    fi
+
+    # Ensure account line in common-account exactly once
+    sudo awk '!/pam_faillock.so/ {print $0}' "$acct_file" > "${acct_file}.tmp.$$"
+    echo "$account_line" | sudo tee -a "${acct_file}.tmp.$$" > /dev/null
+    sudo mv "${acct_file}.tmp.$$" "$acct_file"
+    c_acc=$(count_line "$account_line" "$acct_file")
+    if [ "$c_acc" -eq 1 ]; then
+      echo "Present: account line in $acct_file"
+    else
+      echo "Warning: account lines count=$c_acc in $acct_file"
+    fi
+
+  elif [ "$use_tally2" -eq 1 ]; then
+    # Fallback to pam_tally2: insert compatible lines
+    preauth_line='auth required pam_tally2.so onerr=fail deny=5 even_deny_root unlock_time=900'
+    account_line='account required pam_tally2.so'
+
+    # Remove existing pam_tally2 lines from auth_file and insert before pam_unix.so
+    sudo grep -v 'pam_tally2.so' "$auth_file" > "${auth_file}.tmp.$$" || sudo cp -a "$auth_file" "${auth_file}.tmp.$$"
+
+    awk -v pre="$preauth_line" 'BEGIN{inserted=0} { print $0; if (!inserted && $0 ~ /pam_unix.so/) { print pre; inserted=1 } } END{ if (!inserted) print pre }' "${auth_file}.tmp.$$" > "${auth_file}.new.$$"
+
+    sudo mv "${auth_file}.new.$$" "$auth_file"
+    rm -f "${auth_file}.tmp.$$"
+
+    c_pre=$(count_line "$preauth_line" "$auth_file")
+    if [ "$c_pre" -eq 1 ]; then
+      echo "Present: auth line in $auth_file for pam_tally2"
+    else
+      echo "Warning: auth lines count=$c_pre in $auth_file for pam_tally2"
+    fi
+
+    # Ensure account line in acct_file exactly once
+    sudo awk '!/pam_tally2.so/ {print $0}' "$acct_file" > "${acct_file}.tmp.$$"
+    echo "$account_line" | sudo tee -a "${acct_file}.tmp.$$" > /dev/null
+    sudo mv "${acct_file}.tmp.$$" "$acct_file"
+    c_acc=$(count_line "$account_line" "$acct_file")
+    if [ "$c_acc" -eq 1 ]; then
+      echo "Present: account line in $acct_file for pam_tally2"
+    else
+      echo "Warning: account lines count=$c_acc in $acct_file for pam_tally2"
+    fi
+
   fi
 
   return 0
