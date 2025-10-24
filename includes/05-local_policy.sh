@@ -138,6 +138,7 @@ lp_sysctl_fs_kernel () {
     "fs.protected_symlinks=1"
     "fs.suid_dumpable=0"
     "kernel.randomize_va_space=2"
+    "kernel.sysrq=0"
   )
   local item key val
   for item in "${settings[@]}"; do
@@ -187,6 +188,7 @@ lp_sysctl_persist_and_reload () {
     fs.protected_symlinks
     fs.suid_dumpable
     kernel.randomize_va_space
+    kernel.sysrq
   )
 
   {
