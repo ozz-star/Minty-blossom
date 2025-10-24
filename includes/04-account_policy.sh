@@ -145,7 +145,7 @@ ap_pam_pwquality_inline () {
   # Create a timestamped backup
   local ts tmp_new
   ts=$(date +%Y%m%d%H%M%S)
-  sudo cp -a "$target" "${target}.bak.${ts}"
+  ap_mk_backup "$target" >/dev/null || true
 
   # If the exact line already exists, no-op
   if sudo grep -q -x -- "${line_to_add}" "$target" 2>/dev/null; then
@@ -172,8 +172,7 @@ ap_secure_login_defs () {
   target=/etc/login.defs
   ts=$(date +%Y%m%d%H%M%S)
   if [ -f "$target" ]; then
-    sudo cp -a "$target" "${target}.bak.${ts}"
-    echo "Backup created: ${target}.bak.${ts}"
+    ap_mk_backup "$target" >/dev/null || true
   else
     sudo touch "$target"
     echo "Created empty $target"
@@ -279,8 +278,7 @@ ap_lockout_faillock () {
   make_backup() {
     local f=$1
     if [ -f "$f" ]; then
-      sudo cp -a "$f" "${f}.bak.${ts}"
-      echo "Backup created: ${f}.bak.${ts}"
+      ap_mk_backup "$f" >/dev/null || true
     else
       sudo touch "$f"
       echo "Created empty $f"
@@ -310,7 +308,7 @@ ap_lockout_faillock () {
 
     awk -v pre="$preauth_line" -v fail="$authfail_line" -v succ="$authsucc_line" 'BEGIN{pre_inserted=0; fail_inserted=0} { print $0; if (!pre_inserted && $0 ~ /pam_unix.so/) { print pre; pre_inserted=1 } if (pre_inserted && $0 ~ /pam_unix.so/ && !fail_inserted) { print fail; fail_inserted=1 }} END{ if (!pre_inserted) print pre; if (!fail_inserted) print fail; print succ }' "${auth_file}.tmp.$$" > "${auth_file}.new.$$"
 
-    sudo mv "${auth_file}.new.$$" "$auth_file"
+    ap_mv "${auth_file}.new.$$" "$auth_file"
     rm -f "${auth_file}.tmp.$$"
 
     c_pre=$(count_line "$preauth_line" "$auth_file")
@@ -335,7 +333,7 @@ ap_lockout_faillock () {
     # Ensure account line in common-account exactly once
     sudo awk '!/pam_faillock.so/ {print $0}' "$acct_file" > "${acct_file}.tmp.$$"
     echo "$account_line" | sudo tee -a "${acct_file}.tmp.$$" > /dev/null
-    sudo mv "${acct_file}.tmp.$$" "$acct_file"
+    ap_mv "${acct_file}.tmp.$$" "$acct_file"
     c_acc=$(count_line "$account_line" "$acct_file")
     if [ "$c_acc" -eq 1 ]; then
       echo "Present: account line in $acct_file"
@@ -390,8 +388,7 @@ ap_disallow_blank_passwords () {
   pam_files=(/etc/pam.d/common-auth /etc/pam.d/common-password /etc/pam.d/sshd)
   for f in "${pam_files[@]}"; do
     if [ -f "$f" ]; then
-      sudo cp -a "$f" "${f}.bak.${ts}"
-      echo "Backup created: ${f}.bak.${ts}"
+      ap_mk_backup "$f" >/dev/null || true
       # Remove the 'nullok' token which allows empty passwords
       sudo sed -ri 's/\bnullok\b//g' "$f"
       # Collapse multiple spaces/tabs to single space for cleanliness
@@ -403,8 +400,7 @@ ap_disallow_blank_passwords () {
   # SSH: ensure PermitEmptyPasswords no
   sshf=/etc/ssh/sshd_config
   if [ -f "$sshf" ]; then
-    sudo cp -a "$sshf" "${sshf}.bak.${ts}"
-    echo "Backup created: ${sshf}.bak.${ts}"
+    ap_mk_backup "$sshf" >/dev/null || true
     if sudo grep -q -E '^\s*PermitEmptyPasswords\b' "$sshf"; then
       sudo sed -ri 's/^\s*PermitEmptyPasswords\b.*$/PermitEmptyPasswords no/' "$sshf"
       echo "Set PermitEmptyPasswords no in $sshf"
@@ -447,7 +443,7 @@ ap_ensure_password_hashing () {
         next
       } { print $0 }' "$f" > "${f}.tmp.$$" || sudo cp -a "$f" "${f}.tmp.$$"
 
-    sudo mv "${f}.tmp.$$" "$f"
+    ap_mv "${f}.tmp.$$" "$f"
     echo "Ensured sha512 token on pam_unix.so lines in $f"
   done
 
