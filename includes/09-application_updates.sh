@@ -129,7 +129,7 @@ au_update_chrome () {
 }
 
 # ------------------------------------------------------------
-# Interactive looping menu
+# Interactive looping menu (returns to main menu when done)
 # ------------------------------------------------------------
 show_update_menu () {
   while true; do
@@ -139,7 +139,7 @@ show_update_menu () {
     echo "1) Run all application updates"
     echo "2) Update Firefox only"
     echo "3) Update Google Chrome only"
-    echo "4) Exit"
+    echo "4) Return to Main Menu"
     echo -e "${CYAN}------------------------------------------${NC}"
     read -rp "Choose an option [1-4]: " choice
     echo
@@ -155,8 +155,9 @@ show_update_menu () {
         au_update_chrome
         ;;
       4)
-        echo "Exiting."
-        break
+        echo "Returning to main menu..."
+        sleep 1
+        return 0   # <--- returns control to the parent menu
         ;;
       *)
         echo "Invalid option. Please choose 1–4."
@@ -166,7 +167,8 @@ show_update_menu () {
 }
 
 # ------------------------------------------------------------
-# Entry point
+# Entry point (callable from main script)
 # ------------------------------------------------------------
-show_update_menu
-
+run_update_menu () {
+  show_update_menu
+}
