@@ -11,14 +11,6 @@ invoke_local_policy () {
   lp_sysctl_ipv4_misc
   lp_sysctl_fs_kernel
   # Explicitly ensure SysRq is disabled on runtime and persisted
-  lp_disable_sysrq() {
-    # runtime
-    if sudo sysctl -w kernel.sysrq=0 >/dev/null 2>&1; then
-      echo "Set runtime kernel.sysrq=0"
-    else
-      echo "Warning: failed to set runtime kernel.sysrq=0" >&2
-    fi
-  }
   lp_disable_sysrq
   lp_sysctl_persist_and_reload
   lp_secure_sudo
