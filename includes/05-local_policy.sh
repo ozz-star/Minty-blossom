@@ -351,6 +351,58 @@ lp_enable_aslr () {
 }
 
 # -------------------------------------------------------------------
+# Verify local policy: runtime vs persisted checks for SysRq and ASLR
+# Prints status lines and returns 0 if both match persisted values, non-zero otherwise.
+# DRY_RUN safe: will only print what it would check.
+# -------------------------------------------------------------------
+lp_verify_local_policy () {
+  local ok=0
+  local runtime_sysrq persisted_sysrq
+  local runtime_aslr persisted_aslr
+  local outfile="/etc/sysctl.d/99-hardening.conf"
+
+  echo "Verifying local policy settings..."
+
+  # Runtime checks (use sysctl -n to get values)
+  runtime_sysrq=$(sysctl -n kernel.sysrq 2>/dev/null || echo "")
+  runtime_aslr=$(sysctl -n kernel.randomize_va_space 2>/dev/null || echo "")
+
+  if [ "${DRY_RUN:-0}" -eq 1 ]; then
+    echo "DRY RUN: would check runtime kernel.sysrq (got: ${runtime_sysrq:-<missing>})"
+    echo "DRY RUN: would check runtime kernel.randomize_va_space (got: ${runtime_aslr:-<missing>})"
+  fi
+
+  # Persisted checks
+  if [ -f "$outfile" ]; then
+    persisted_sysrq=$(grep -Ei '^\s*kernel\.sysrq' "$outfile" 2>/dev/null | tail -n1 | awk -F'=' '{gsub(/ /, "", $2); print $2}' || echo "")
+    persisted_aslr=$(grep -Ei '^\s*kernel\.randomize_va_space' "$outfile" 2>/dev/null | tail -n1 | awk -F'=' '{gsub(/ /, "", $2); print $2}' || echo "")
+  else
+    persisted_sysrq=""
+    persisted_aslr=""
+  fi
+
+  printf "Runtime kernel.sysrq: %s\n" "${runtime_sysrq:-<missing>}"
+  printf "Persisted kernel.sysrq: %s\n" "${persisted_sysrq:-<missing>}"
+  if [ "${runtime_sysrq}" != "${persisted_sysrq}" ] || [ -z "${runtime_sysrq}" ]; then
+    echo "Mismatch: kernel.sysrq runtime != persisted or missing" >&2
+    ok=1
+  else
+    echo "OK: kernel.sysrq matches persisted value"
+  fi
+
+  printf "Runtime kernel.randomize_va_space: %s\n" "${runtime_aslr:-<missing>}"
+  printf "Persisted kernel.randomize_va_space: %s\n" "${persisted_aslr:-<missing>}"
+  if [ "${runtime_aslr}" != "${persisted_aslr}" ] || [ -z "${runtime_aslr}" ]; then
+    echo "Mismatch: kernel.randomize_va_space runtime != persisted or missing" >&2
+    ok=1
+  else
+    echo "OK: kernel.randomize_va_space matches persisted value"
+  fi
+
+  return "$ok"
+}
+
+# -------------------------------------------------------------------
 # Secure sudo (dangerous if misused; Debian/Ubuntu/Mint)
 # -------------------------------------------------------------------
 lp_secure_sudo () {
