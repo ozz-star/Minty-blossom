@@ -254,17 +254,23 @@ lp_secure_sudo () {
   fi
 
   if command -v apt-get >/dev/null 2>&1; then
-    if env DEBIAN_FRONTEND=noninteractive apt-get -y purge sudo >/dev/null 2>&1; then
-      echo "Purged sudo package."
-    else
-      echo "Warning: Failed to purge sudo package." >&2
-    fi
+    echo "Resetting sudo configuration (safe method)..."
 
-    if env DEBIAN_FRONTEND=noninteractive apt-get -y install sudo >/dev/null 2>&1; then
-      echo "Installed sudo package."
-    else
-      echo "Warning: Failed to install sudo package." >&2
-    fi
+# Ensure the sudo package is present and up to date
+if env DEBIAN_FRONTEND=noninteractive apt-get -y --reinstall install sudo >/dev/null 2>&1; then
+  echo "Sudo package reinstalled successfully."
+else
+  echo "Warning: Failed to reinstall sudo package." >&2
+fi
+
+# Restore default sudoers file
+if [ -f /usr/share/doc/sudo/examples/sudoers ]; then
+  cp -f /usr/share/doc/sudo/examples/sudoers /etc/sudoers
+  chmod 0440 /etc/sudoers
+  echo "Restored default /etc/sudoers file."
+else
+  echo "Warning: Could not locate default sudoers template." >&2
+fi
   else
     echo "Warning: apt-get not found; cannot purge/reinstall sudo." >&2
   fi
