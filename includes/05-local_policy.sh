@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Apply conservative sysctl settings for local policies.
 apply_sysctl() {
+  local sudo_cmd=""
+  if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+      sudo_cmd=sudo
+    else
+      echo "Error: root privileges required to apply sysctl settings." >&2
+      return 1
+    fi
+  fi
+
   local -a settings=(
     "net.ipv6.conf.all.accept_ra=0"
     "net.ipv6.conf.all.accept_redirects=0"
@@ -34,13 +45,47 @@ apply_sysctl() {
   )
 
   for setting in "${settings[@]}"; do
-    sysctl -w "$setting"
+    ${sudo_cmd:+$sudo_cmd }sysctl -w "$setting"
   done
 
-  printf "%s\n" "${settings[@]}" | sudo tee /etc/sysctl.d/99-secure.conf >/dev/null
-  sudo sysctl --system
+  printf "%s\n" "${settings[@]}" | ${sudo_cmd:+$sudo_cmd }tee /etc/sysctl.d/99-secure.conf >/dev/null
+  ${sudo_cmd:+$sudo_cmd }sysctl --system
 }
 
-echo "[+] Applying local security policy..."
-apply_sysctl
-echo "[+] Done."
+
+# Public entrypoint for the main menu. harden.sh expects a function named
+# invoke_local_policy to be defined and called when the user selects the
+# "Local Policy" menu item. This file must not execute on source.
+invoke_local_policy() {
+  # Use config.sh-provided variables if available (config.sh is sourced by the
+  # top-level script). Otherwise, fall back to /etc/os-release.
+  local this_id=""
+  if [ -n "${ID:-}" ]; then
+    this_id="${ID,,}"
+  else
+    if [ -r /etc/os-release ]; then
+      this_id="$(awk -F= '/^ID=/{print tolower($2)}' /etc/os-release | tr -d '"')"
+    fi
+  fi
+
+  # Only run on Linux Mint
+  case "${this_id}" in
+    linuxmint|mint|*mint*) : ;;
+    *)
+      echo "[i] Skipping local policy: not running on Linux Mint (detected: ${this_id:-unknown})."
+      return 0
+      ;;
+  esac
+
+  echo "[+] Applying local security policy (Mint-only)..."
+  apply_sysctl
+  echo "[+] Done."
+}
+
+# If this file is executed directly, call the entrypoint. When sourced by the
+# top-level orchestrator (harden.sh) the function will be registered and only
+# run when that orchestrator calls it; this avoids applying settings at
+# script bootstrap/boot-time.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  invoke_local_policy "$@"
+fi
