@@ -160,83 +160,39 @@ lp_sysctl_fs_kernel () {
 # Persist sysctl settings and reload
 # -------------------------------------------------------------------
 lp_sysctl_persist_and_reload () {
-  local outfile="/etc/sysctl.d/99-hardening.conf"
-  local tmp
-  tmp="$(mktemp)" || { echo "Warning: mktemp failed" >&2; return 1; }
+ 
+sudo tee /etc/sysctl.d/99-secure.conf <<'EOF'
+net.ipv6.conf.all.accept_ra = 0
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.all.accept_source_route = 0
+net.ipv6.conf.all.forwarding = 0
+net.ipv6.conf.default.accept_ra = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv6.conf.default.accept_source_route = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.all.secure_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.default.log_martians = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.conf.default.secure_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+net.ipv4.tcp_syncookies = 1
+net.ipv4.ip_forward = 0
+fs.protected_hardlinks = 1
+fs.protected_symlinks = 1
+fs.suid_dumpable = 0
+kernel.randomize_va_space = 2
+kernel.sysrq = 0
+EOF
+sudo sysctl --system
 
-  local -a keys=(
-    net.ipv6.conf.all.accept_ra
-    net.ipv6.conf.all.accept_redirects
-    net.ipv6.conf.all.accept_source_route
-    net.ipv6.conf.all.forwarding
-    net.ipv6.conf.default.accept_ra
-    net.ipv6.conf.default.accept_redirects
-    net.ipv6.conf.default.accept_source_route
-    net.ipv4.conf.all.accept_redirects
-    net.ipv4.conf.all.accept_source_route
-    net.ipv4.conf.all.log_martians
-    net.ipv4.conf.all.rp_filter
-    net.ipv4.conf.all.secure_redirects
-    net.ipv4.conf.all.send_redirects
-    net.ipv4.conf.default.accept_redirects
-    net.ipv4.conf.default.accept_source_route
-    net.ipv4.conf.default.log_martians
-    net.ipv4.conf.default.rp_filter
-    net.ipv4.conf.default.secure_redirects
-    net.ipv4.conf.default.send_redirects
-    net.ipv4.icmp_echo_ignore_broadcasts
-    net.ipv4.icmp_ignore_bogus_error_responses
-    net.ipv4.tcp_syncookies
-    net.ipv4.ip_forward
-    fs.protected_hardlinks
-    fs.protected_symlinks
-    fs.suid_dumpable
-    kernel.randomize_va_space
-    kernel.sysrq
-  )
-
-  {
-    echo "# Linux-Fox1 hardening sysctl (managed)"
-    echo "# Do not edit manually; changes may be overwritten"
-  } > "$tmp"
-
-  local key val count=0
-  for key in "${keys[@]}"; do
-    val="$(sysctl -n "$key" 2>/dev/null)"
-    if [ -n "$val" ]; then
-      printf "%s = %s\n" "$key" "$val" >> "$tmp"
-      count=$((count+1))
-    fi
-  done
-
-  if [ -f "$outfile" ]; then
-    local backup="${outfile}.$(date +%Y%m%d-%H%M%S).bak"
-    if cp -a -- "$outfile" "$backup"; then
-      echo "Backup: $backup"
-    else
-      echo "Warning: failed to create backup of $outfile" >&2
-    fi
-  fi
-
-  if install -m 0644 -T -- "$tmp" "$outfile" 2>/dev/null; then
-    :
-  elif mv -- "$tmp" "$outfile"; then
-    chmod 0644 "$outfile" || true
-  else
-    echo "Warning: failed to write $outfile" >&2
-    rm -f -- "$tmp"
-    return 1
-  fi
-
-  echo "Wrote: $outfile ($count entries)"
-
-  if sysctl --system >/dev/null 2>&1; then
-    echo "Reload: sysctl --system OK"
-  elif sysctl -p "$outfile" >/dev/null 2>&1; then
-    echo "Reload: sysctl -p $outfile OK"
-  else
-    echo "Warning: failed to reload sysctl settings" >&2
-  fi
 }
 
 
