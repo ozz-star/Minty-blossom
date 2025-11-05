@@ -12,6 +12,8 @@ invoke_local_policy () {
   lp_sysctl_fs_kernel
   # Explicitly ensure SysRq is disabled on runtime and persisted
   lp_disable_sysrq
+  # Ensure ASLR (Address Space Layout Randomization) is enabled at runtime and persisted
+  lp_enable_aslr
   lp_sysctl_persist_and_reload
   lp_secure_sudo
 
@@ -290,6 +292,61 @@ lp_disable_sysrq () {
   sudo rm -f "$tmp" || true
 
   echo "Persisted kernel.sysrq=0 to $outfile (backup: ${outfile}.bak.${ts} if existed)"
+  return 0
+}
+
+# -------------------------------------------------------------------
+# Enable ASLR (Address Space Layout Randomization)
+# Ensures kernel.randomize_va_space=2 at runtime and persists it to /etc/sysctl.d/99-hardening.conf
+# Works on Ubuntu/Mint; uses sudo when necessary.
+# -------------------------------------------------------------------
+lp_enable_aslr () {
+  local outfile="/etc/sysctl.d/99-hardening.conf"
+  local ts tmp
+  ts=$(date +%Y%m%d%H%M%S)
+
+  echo "Enabling ASLR (kernel.randomize_va_space=2)"
+
+  if [ "${DRY_RUN:-0}" -eq 1 ]; then
+    echo "DRY RUN: would run 'sysctl -w kernel.randomize_va_space=2'"
+    echo "DRY RUN: would persist 'kernel.randomize_va_space = 2' to $outfile"
+    return 0
+  fi
+
+  # Set runtime value (use sudo if not root)
+  if [ "$(id -u)" -ne 0 ]; then
+    if sudo sysctl -w kernel.randomize_va_space=2 >/dev/null 2>&1; then
+      echo "Set runtime kernel.randomize_va_space=2 (via sudo)"
+    else
+      echo "Warning: failed to set runtime kernel.randomize_va_space=2 via sudo" >&2
+    fi
+  else
+    if sysctl -w kernel.randomize_va_space=2 >/dev/null 2>&1; then
+      echo "Set runtime kernel.randomize_va_space=2"
+    else
+      echo "Warning: failed to set runtime kernel.randomize_va_space=2" >&2
+    fi
+  fi
+
+  # Persist the setting into the sysctl conf (create backup)
+  if [ -f "$outfile" ]; then
+    sudo cp -a -- "$outfile" "${outfile}.bak.${ts}" || echo "Warning: failed to backup $outfile" >&2
+  fi
+
+  tmp=$(mktemp) || tmp="/tmp/99-hardening.${ts}.tmp"
+
+  # Remove existing kernel.randomize_va_space lines (case-insensitive) and preserve other settings
+  if [ -f "$outfile" ]; then
+    sudo sed -E '/^\s*kernel\.randomize_va_space\b/Id' "$outfile" > "$tmp" || sudo cp -a "$outfile" "$tmp"
+  else
+    : > "$tmp"
+  fi
+
+  printf '%s\n' 'kernel.randomize_va_space = 2' | sudo tee -a "$tmp" > /dev/null
+  sudo install -m 0644 "$tmp" "$outfile"
+  sudo rm -f "$tmp" || true
+
+  echo "Persisted kernel.randomize_va_space=2 to $outfile (backup: ${outfile}.bak.${ts} if existed)"
   return 0
 }
 
