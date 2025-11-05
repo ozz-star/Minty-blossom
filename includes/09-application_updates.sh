@@ -72,54 +72,54 @@ au_flatpak_update_all () {
 }
 
 # ------------------------------------------------------------
-# Update Firefox, Chrome, and Thunderbird (if found)
+# Update Firefox, Chrome, and Thunderbird (Mint 21 compatible)
 # ------------------------------------------------------------
 au_browser_mail_updates () {
   echo "Checking for browser and mail client updates..."
 
-  # Firefox
+  # --- Firefox ---
   if command -v firefox >/dev/null 2>&1; then
     echo "Updating Firefox..."
-    if dpkg -l firefox >/dev/null 2>&1; then
-      sudo apt-get install --only-upgrade -y firefox >/dev/null 2>&1 && \
-      echo "Firefox (APT) updated." || echo "Warning: Failed to update Firefox (APT)." >&2
-    elif snap list firefox >/dev/null 2>&1; then
-      sudo snap refresh firefox >/dev/null 2>&1 && \
-      echo "Firefox (Snap) updated." || echo "Warning: Failed to update Firefox (Snap)." >&2
-    elif flatpak list | grep -q org.mozilla.firefox; then
+    if flatpak list --app | grep -q org.mozilla.firefox; then
       sudo flatpak update -y org.mozilla.firefox >/dev/null 2>&1 && \
       echo "Firefox (Flatpak) updated." || echo "Warning: Failed to update Firefox (Flatpak)." >&2
+    elif dpkg -l firefox >/dev/null 2>&1; then
+      sudo apt-get install --only-upgrade -y firefox >/dev/null 2>&1 && \
+      echo "Firefox (APT) updated." || echo "Warning: Failed to update Firefox (APT)." >&2
+    else
+      echo "Firefox found but source unknown; skipping."
     fi
   else
     echo "Firefox not found; skipping."
   fi
 
-  # Google Chrome
+  # --- Google Chrome ---
   if command -v google-chrome >/dev/null 2>&1; then
     echo "Updating Google Chrome..."
     if dpkg -l google-chrome-stable >/dev/null 2>&1; then
       sudo apt-get install --only-upgrade -y google-chrome-stable >/dev/null 2>&1 && \
       echo "Google Chrome updated." || echo "Warning: Failed to update Google Chrome." >&2
-    elif flatpak list | grep -q com.google.Chrome; then
+    elif flatpak list --app | grep -q com.google.Chrome; then
       sudo flatpak update -y com.google.Chrome >/dev/null 2>&1 && \
       echo "Google Chrome (Flatpak) updated." || echo "Warning: Failed to update Google Chrome (Flatpak)." >&2
+    else
+      echo "Google Chrome found but source unknown; skipping."
     fi
   else
     echo "Google Chrome not found; skipping."
   fi
 
-  # Thunderbird
+  # --- Thunderbird ---
   if command -v thunderbird >/dev/null 2>&1; then
     echo "Updating Thunderbird..."
-    if dpkg -l thunderbird >/dev/null 2>&1; then
-      sudo apt-get install --only-upgrade -y thunderbird >/dev/null 2>&1 && \
-      echo "Thunderbird (APT) updated." || echo "Warning: Failed to update Thunderbird (APT)." >&2
-    elif snap list thunderbird >/dev/null 2>&1; then
-      sudo snap refresh thunderbird >/dev/null 2>&1 && \
-      echo "Thunderbird (Snap) updated." || echo "Warning: Failed to update Thunderbird (Snap)." >&2
-    elif flatpak list | grep -q org.mozilla.Thunderbird; then
+    if flatpak list --app | grep -q org.mozilla.Thunderbird; then
       sudo flatpak update -y org.mozilla.Thunderbird >/dev/null 2>&1 && \
       echo "Thunderbird (Flatpak) updated." || echo "Warning: Failed to update Thunderbird (Flatpak)." >&2
+    elif dpkg -l thunderbird >/dev/null 2>&1; then
+      sudo apt-get install --only-upgrade -y thunderbird >/dev/null 2>&1 && \
+      echo "Thunderbird (APT) updated." || echo "Warning: Failed to update Thunderbird (APT)." >&2
+    else
+      echo "Thunderbird found but source unknown; skipping."
     fi
   else
     echo "Thunderbird not found; skipping."
