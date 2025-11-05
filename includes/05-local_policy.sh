@@ -31,12 +31,12 @@ invoke_local_policy () {
 # -------------------------------------------------------------------
 lp_sysctl_ipv6_all () {
   local -a settings=(
-    "net.ipv6.conf.all.accept_ra=0"
-    "net.ipv6.conf.all.accept_redirects=0"
     "net.ipv6.conf.all.accept_source_route=0"
     "net.ipv6.conf.all.forwarding=0"
   )
   local item key val
+    # Ensure SysRq disabled at runtime and persisted
+    lp_disable_sysrq
   for item in "${settings[@]}"; do
     key="${item%%=*}"
     val="${item#*=}"
@@ -243,6 +243,62 @@ lp_sysctl_persist_and_reload () {
   else
     echo "Warning: failed to reload sysctl settings" >&2
   fi
+}
+
+
+# -------------------------------------------------------------------
+# Explicit disable SysRq helper (robust)
+# Ensures kernel.sysrq=0 at runtime and persists it to /etc/sysctl.d/99-hardening.conf
+# Works on Ubuntu/Mint; uses sudo when necessary.
+# -------------------------------------------------------------------
+lp_disable_sysrq () {
+  local outfile="/etc/sysctl.d/99-hardening.conf"
+  local ts tmp
+  ts=$(date +%Y%m%d%H%M%S)
+
+  echo "Disabling SysRq (kernel.sysrq=0)"
+
+  if [ "${DRY_RUN:-0}" -eq 1 ]; then
+    echo "DRY RUN: would run 'sysctl -w kernel.sysrq=0'"
+    echo "DRY RUN: would persist 'kernel.sysrq = 0' to $outfile"
+    return 0
+  fi
+
+  # Set runtime value (use sudo if not root)
+  if [ "$(id -u)" -ne 0 ]; then
+    if sudo sysctl -w kernel.sysrq=0 >/dev/null 2>&1; then
+      echo "Set runtime kernel.sysrq=0 (via sudo)"
+    else
+      echo "Warning: failed to set runtime kernel.sysrq=0 via sudo" >&2
+    fi
+  else
+    if sysctl -w kernel.sysrq=0 >/dev/null 2>&1; then
+      echo "Set runtime kernel.sysrq=0"
+    else
+      echo "Warning: failed to set runtime kernel.sysrq=0" >&2
+    fi
+  fi
+
+  # Persist the setting into the sysctl conf (create backup)
+  if [ -f "$outfile" ]; then
+    sudo cp -a -- "$outfile" "${outfile}.bak.${ts}" || echo "Warning: failed to backup $outfile" >&2
+  fi
+
+  tmp=$(mktemp) || tmp="/tmp/99-hardening.${ts}.tmp"
+
+  # Remove existing kernel.sysrq lines (case-insensitive) and preserve other settings
+  if [ -f "$outfile" ]; then
+    sudo sed -E '/^\s*kernel\.sysrq\b/Id' "$outfile" > "$tmp" || sudo cp -a "$outfile" "$tmp"
+  else
+    : > "$tmp"
+  fi
+
+  printf '%s\n' 'kernel.sysrq = 0' | sudo tee -a "$tmp" > /dev/null
+  sudo install -m 0644 "$tmp" "$outfile"
+  sudo rm -f "$tmp" || true
+
+  echo "Persisted kernel.sysrq=0 to $outfile (backup: ${outfile}.bak.${ts} if existed)"
+  return 0
 }
 
 # -------------------------------------------------------------------
